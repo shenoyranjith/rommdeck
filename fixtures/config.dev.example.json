@@ -1,0 +1,23 @@
+{
+  "profile": "dev",
+  "romm": {
+    "baseUrl": "http://192.168.1.10:8080",
+    "apiToken": "rmm_REPLACE_ME"
+  },
+  "retrodeck": {
+    "configPath": "",
+    "romsPath": "",
+    "savesPath": "",
+    "statesPath": ""
+  },
+  "sync": {
+    "enabled": false,
+    "mode": "push_pull",
+    "intervalSeconds": 60,
+    "debounceSeconds": 15,
+    "conflictPolicy": "keep_both",
+    "deviceId": null,
+    "deviceName": "RommDeck Dev"
+  },
+  "platformMapOverrides": {}
+}

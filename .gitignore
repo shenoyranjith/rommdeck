@@ -1,0 +1,14 @@
+node_modules/
+dist/
+dist-electron/
+out/
+*.tsbuildinfo
+.DS_Store
+*.log
+.env
+.env.local
+packages/gui/release/
+coverage/
+.vite/
+*.db
+*.db-journal

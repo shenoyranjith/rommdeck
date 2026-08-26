@@ -1,0 +1,23 @@
+{
+  "name": "@rommdeck/syncd",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "rommdeck-syncd": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/cli.js",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@rommdeck/core": "*",
+    "chokidar": "^4.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.4",
+    "typescript": "^5.7.3"
+  }
+}

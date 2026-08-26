@@ -1,0 +1,18 @@
+[Unit]
+Description=RommDeck save/state sync daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/rommdeck-syncd
+Restart=on-failure
+RestartSec=10
+Environment=NODE_ENV=production
+# Optional: Environment=ROMMDECK_PROFILE=prod
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

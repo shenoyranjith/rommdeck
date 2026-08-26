@@ -1,0 +1,8 @@
+{
+  "paths": {
+    "rd_home_path": "${HOME}/rommdeck-dev/retrodeck",
+    "roms_path": "${HOME}/rommdeck-dev/retrodeck/roms",
+    "saves_path": "${HOME}/rommdeck-dev/retrodeck/saves",
+    "states_path": "${HOME}/rommdeck-dev/retrodeck/states"
+  }
+}
