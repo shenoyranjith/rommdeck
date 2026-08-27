@@ -9,6 +9,18 @@ import { getApi } from "../api";
 import { cn } from "../lib/cn";
 import { IconClose, IconSearch, IconSelect } from "../components/icons";
 import { RomGrid } from "./library/RomGrid";
+import type { Platform, RomItem } from "./library/types";
+import {
+  catalogCacheKey,
+  getCatalog,
+  getDownloadedIds,
+  getDownloadedRoms,
+  invalidateDownloaded,
+  markCatalogRomDownloaded,
+  setCatalog,
+  setDownloadedIds as cacheDownloadedIds,
+  setDownloadedRoms as cacheDownloadedRoms,
+} from "./library/romCache";
 
 const PAGE_SIZE = 48;
 
@@ -23,34 +35,6 @@ function formatBytes(n: number | undefined | null): string {
     i++;
   } while (v >= 1024 && i < units.length - 1);
   return `${v < 10 && i > 0 ? v.toFixed(1) : Math.round(v)} ${units[i]}`;
-}
-
-interface Platform {
-  id: number;
-  name: string;
-  slug: string;
-  rom_count?: number;
-  logoUrl?: string | null;
-  displayName?: string;
-}
-
-interface RomItem {
-  id: number;
-  name: string;
-  platform_slug?: string;
-  platform_name?: string;
-  platform_display_name?: string;
-  summary?: string | null;
-  fs_name?: string;
-  fs_size_bytes?: number;
-  filesize?: number;
-  files?: { file_name: string; file_size_bytes?: number }[];
-  path_cover_small?: string | null;
-  path_cover_large?: string | null;
-  url_cover?: string | null;
-  coverUrl?: string | null;
-  coverUrlSmall?: string | null;
-  downloaded?: boolean;
 }
 
 export function LibraryPage() {
@@ -131,10 +115,6 @@ export function LibraryPage() {
   const resetAndLoad = useCallback(async () => {
     // Invalidate any in-flight loadMore from the previous query first.
     const qid = ++queryIdRef.current;
-    // Drop previous list immediately so a deep scroll position can't keep
-    // the load-more sentinel intersecting into the next platform/search.
-    setRoms([]);
-    setTotal(0);
     setSelectedIds(new Set());
     setSelectMode(false);
     setFocusedId(null);
@@ -146,9 +126,28 @@ export function LibraryPage() {
     scrollRef.current?.scrollTo(0, 0);
 
     if (!selected && !search) {
+      setRoms([]);
+      setTotal(0);
       setLoading(false);
       return;
     }
+
+    const key = catalogCacheKey(selected?.id, search);
+    const cached = getCatalog(key);
+    if (cached) {
+      setRoms(cached.items);
+      setTotal(cached.total);
+      romsRef.current = cached.items;
+      totalRef.current = cached.total;
+      setLoading(false);
+      requestAnimationFrame(() => {
+        scrollRef.current?.scrollTo(0, 0);
+      });
+      return;
+    }
+
+    setRoms([]);
+    setTotal(0);
     setLoading(true);
     try {
       const result = await getApi().getRoms({
@@ -159,9 +158,13 @@ export function LibraryPage() {
         offset: 0,
       });
       if (qid !== queryIdRef.current) return;
-      setRoms(result.items as RomItem[]);
-      setTotal(result.total ?? result.items.length);
-      // Grid remounts after clear; pin to top once the first page is in.
+      const items = result.items as RomItem[];
+      const nextTotal = result.total ?? items.length;
+      setRoms(items);
+      setTotal(nextTotal);
+      romsRef.current = items;
+      totalRef.current = nextTotal;
+      setCatalog(key, items, nextTotal);
       requestAnimationFrame(() => {
         scrollRef.current?.scrollTo(0, 0);
       });
@@ -186,11 +189,18 @@ export function LibraryPage() {
       setDownloadedIds(new Set());
       return;
     }
+    const cached = getDownloadedIds(selected.slug);
+    if (cached) {
+      setDownloadedIds(new Set(cached));
+      return;
+    }
     let cancelled = false;
     void (async () => {
       try {
         const ids = await getApi().downloadedIds(selected.slug);
-        if (!cancelled) setDownloadedIds(new Set(ids));
+        if (cancelled) return;
+        cacheDownloadedIds(selected.slug, ids);
+        setDownloadedIds(new Set(ids));
       } catch {
         if (!cancelled) setDownloadedIds(new Set());
       }
@@ -207,14 +217,25 @@ export function LibraryPage() {
       setDownloadedRoms([]);
       return;
     }
+    const slug = selected.slug;
+    const cached = getDownloadedRoms(slug);
+    if (cached) {
+      setDownloadedRoms(cached);
+      setDownloadedIds(new Set(cached.map((r) => r.id)));
+      setLoadingDownloaded(false);
+      scrollRef.current?.scrollTo(0, 0);
+      return;
+    }
+
     const qid = ++downloadedQueryRef.current;
     setLoadingDownloaded(true);
     setError(null);
     scrollRef.current?.scrollTo(0, 0);
     void (async () => {
       try {
-        const items = (await getApi().getDownloadedRoms(selected.slug)) as RomItem[];
+        const items = (await getApi().getDownloadedRoms(slug)) as RomItem[];
         if (qid !== downloadedQueryRef.current) return;
+        cacheDownloadedRoms(slug, items);
         setDownloadedRoms(items);
         setDownloadedIds(new Set(items.map((r) => r.id)));
       } catch (e) {
@@ -231,6 +252,7 @@ export function LibraryPage() {
     if (!hasMore || loading || loadingMore || loadingAll) return;
     if (!selected && !search) return;
     const qid = queryIdRef.current;
+    const key = catalogCacheKey(selected?.id, search);
     const offset = roms.length;
     setLoadingMore(true);
     setError(null);
@@ -244,11 +266,16 @@ export function LibraryPage() {
       });
       if (qid !== queryIdRef.current) return;
       const items = result.items as RomItem[];
+      const nextTotal = result.total ?? offset + items.length;
       setRoms((prev) => {
         const seen = new Set(prev.map((r) => r.id));
-        return [...prev, ...items.filter((r) => !seen.has(r.id))];
+        const merged = [...prev, ...items.filter((r) => !seen.has(r.id))];
+        romsRef.current = merged;
+        setCatalog(key, merged, nextTotal);
+        return merged;
       });
-      setTotal(result.total ?? offset + items.length);
+      setTotal(nextTotal);
+      totalRef.current = nextTotal;
     } catch (e) {
       if (qid !== queryIdRef.current) return;
       setError(e instanceof Error ? e.message : String(e));
@@ -267,6 +294,7 @@ export function LibraryPage() {
     }
 
     const qid = queryIdRef.current;
+    const key = catalogCacheKey(selected?.id, search);
     let cancelled = false;
     setLoadingAll(true);
     setError(null);
@@ -296,6 +324,7 @@ export function LibraryPage() {
             const seen = new Set(prev.map((r) => r.id));
             const merged = [...prev, ...items.filter((r) => !seen.has(r.id))];
             romsRef.current = merged;
+            setCatalog(key, merged, nextTotal);
             return merged;
           });
 
@@ -456,18 +485,27 @@ export function LibraryPage() {
   const deleteLocal = useCallback(async (rom: RomItem) => {
     if (!confirm(`Delete local files for "${rom.name}"? RomM is not touched.`)) return;
     await getApi().deleteLocal(rom.id);
+    const slug = rom.platform_slug ?? selected?.slug;
+    if (slug) invalidateDownloaded(slug);
+    markCatalogRomDownloaded(selected?.id, rom.id, false);
     setDownloadedIds((prev) => {
       const next = new Set(prev);
       next.delete(rom.id);
       return next;
     });
-    setDownloadedRoms((prev) => prev.filter((r) => r.id !== rom.id));
-    setRoms((prev) =>
-      prev.map((r) => (r.id === rom.id ? { ...r, downloaded: false } : r)),
-    );
+    setDownloadedRoms((prev) => {
+      const next = prev.filter((r) => r.id !== rom.id);
+      if (slug) cacheDownloadedRoms(slug, next);
+      return next;
+    });
+    setRoms((prev) => {
+      const next = prev.map((r) => (r.id === rom.id ? { ...r, downloaded: false } : r));
+      if (selected) setCatalog(catalogCacheKey(selected.id, search), next, totalRef.current);
+      return next;
+    });
     if (detail?.id === rom.id) setDetail({ ...rom, downloaded: false });
     setMessage(`Removed local copy of ${rom.name}`);
-  }, [detail?.id]);
+  }, [detail?.id, selected, search]);
 
   const downloadSelected = async () => {
     const items = visible
