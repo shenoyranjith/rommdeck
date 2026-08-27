@@ -70,6 +70,9 @@ export function LibraryPage() {
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadingAll, setLoadingAll] = useState(false);
+  const [loadingDownloaded, setLoadingDownloaded] = useState(false);
+  const [downloadedRoms, setDownloadedRoms] = useState<RomItem[]>([]);
+  const [downloadedIds, setDownloadedIds] = useState<Set<number>>(() => new Set());
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busyPlatform, setBusyPlatform] = useState(false);
@@ -78,6 +81,7 @@ export function LibraryPage() {
   const sentinelRef = useRef<HTMLDivElement>(null);
   const queryIdRef = useRef(0);
   const detailQueryRef = useRef(0);
+  const downloadedQueryRef = useRef(0);
   const romsRef = useRef(roms);
   const totalRef = useRef(total);
   romsRef.current = roms;
@@ -88,9 +92,10 @@ export function LibraryPage() {
     return platforms.filter((p) => (p.rom_count ?? 0) > 0);
   }, [platforms, showAllPlatforms]);
 
-  /** Status filters need the full platform/search result set (downloaded is local). */
-  const needsFullCatalog = filter !== "all";
-  const hasMore = !needsFullCatalog && roms.length < total;
+  /** Missing needs the full RomM catalog; Downloaded comes from the local DB. */
+  const needsFullCatalog = filter === "missing";
+  const catalogMode = filter === "all" || filter === "missing";
+  const hasMore = filter === "all" && roms.length < total;
 
   useEffect(() => {
     void (async () => {
@@ -171,8 +176,56 @@ export function LibraryPage() {
   }, [selected, search]);
 
   useEffect(() => {
+    if (filter === "downloaded") return;
     void resetAndLoad();
-  }, [resetAndLoad]);
+  }, [resetAndLoad, filter]);
+
+  // Keep a platform-scoped set of locally indexed rom_ids for Missing (and badges).
+  useEffect(() => {
+    if (!selected?.slug) {
+      setDownloadedIds(new Set());
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const ids = await getApi().downloadedIds(selected.slug);
+        if (!cancelled) setDownloadedIds(new Set(ids));
+      } catch {
+        if (!cancelled) setDownloadedIds(new Set());
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selected?.slug]);
+
+  // Downloaded tab: hydrate from SQLite + RomM metadata (not the scrolled catalog).
+  useEffect(() => {
+    if (filter !== "downloaded" || !selected?.slug) {
+      if (filter !== "downloaded") return;
+      setDownloadedRoms([]);
+      return;
+    }
+    const qid = ++downloadedQueryRef.current;
+    setLoadingDownloaded(true);
+    setError(null);
+    scrollRef.current?.scrollTo(0, 0);
+    void (async () => {
+      try {
+        const items = (await getApi().getDownloadedRoms(selected.slug)) as RomItem[];
+        if (qid !== downloadedQueryRef.current) return;
+        setDownloadedRoms(items);
+        setDownloadedIds(new Set(items.map((r) => r.id)));
+      } catch (e) {
+        if (qid !== downloadedQueryRef.current) return;
+        setError(e instanceof Error ? e.message : String(e));
+        setDownloadedRoms([]);
+      } finally {
+        if (qid === downloadedQueryRef.current) setLoadingDownloaded(false);
+      }
+    })();
+  }, [filter, selected?.slug]);
 
   const loadMore = useCallback(async () => {
     if (!hasMore || loading || loadingMore || loadingAll) return;
@@ -204,7 +257,7 @@ export function LibraryPage() {
     }
   }, [hasMore, loading, loadingMore, loadingAll, roms.length, selected, search]);
 
-  // Downloaded/Missing need every ROM for the current platform/search — page until done.
+  // Missing: page the RomM catalog until complete, then subtract DB-downloaded ids.
   useEffect(() => {
     if (!needsFullCatalog || loading) return;
     if (!selected && !search) return;
@@ -264,19 +317,30 @@ export function LibraryPage() {
   }, [needsFullCatalog, loading, selected, search]);
 
   const visible = useMemo(() => {
-    return roms.filter((r) => {
-      if (filter === "downloaded") return r.downloaded;
-      if (filter === "missing") return !r.downloaded;
-      return true;
-    });
-  }, [roms, filter]);
+    if (filter === "downloaded") {
+      if (!search) return downloadedRoms;
+      const q = search.toLowerCase();
+      return downloadedRoms.filter(
+        (r) =>
+          r.name.toLowerCase().includes(q) ||
+          (r.fs_name?.toLowerCase().includes(q) ?? false),
+      );
+    }
+    if (filter === "missing") {
+      return roms.filter((r) => !downloadedIds.has(r.id));
+    }
+    return roms;
+  }, [filter, roms, downloadedRoms, downloadedIds, search]);
 
   const gridEmpty = visible.length === 0;
+  const listLoading =
+    (filter === "downloaded" && loadingDownloaded) ||
+    (catalogMode && loading && roms.length === 0);
 
   useEffect(() => {
     const root = scrollRef.current;
     const sentinel = sentinelRef.current;
-    if (!root || !sentinel || needsFullCatalog || gridEmpty) return;
+    if (!root || !sentinel || filter !== "all" || gridEmpty) return;
     const io = new IntersectionObserver(
       (entries) => {
         if (entries.some((e) => e.isIntersecting)) void loadMore();
@@ -285,7 +349,7 @@ export function LibraryPage() {
     );
     io.observe(sentinel);
     return () => io.disconnect();
-  }, [loadMore, loading, needsFullCatalog, gridEmpty]);
+  }, [loadMore, loading, filter, gridEmpty]);
 
   useEffect(() => {
     if (focusedId == null) {
@@ -310,19 +374,30 @@ export function LibraryPage() {
   }, [focusedId]);
 
   const rangeLabel = useMemo(() => {
-    if (loading && roms.length === 0) return "loading…";
-    if (loadingAll) return `Loading ${roms.length} of ${total}…`;
+    if (listLoading) return "loading…";
     if (filter === "downloaded") {
-      const n = roms.filter((r) => r.downloaded).length;
-      return `${n} downloaded`;
+      return search
+        ? `${visible.length} of ${downloadedRoms.length} downloaded`
+        : `${downloadedRoms.length} downloaded`;
     }
+    if (loadingAll) return `Loading ${roms.length} of ${total}…`;
     if (filter === "missing") {
-      const n = roms.filter((r) => !r.downloaded).length;
-      return `${n} missing`;
+      return loadingAll
+        ? `Loading ${roms.length} of ${total}…`
+        : `${visible.length} missing`;
     }
     if (total === 0) return "0 ROMs";
     return `${roms.length} of ${total}`;
-  }, [roms, total, loading, loadingAll, filter]);
+  }, [
+    listLoading,
+    filter,
+    search,
+    visible.length,
+    downloadedRoms.length,
+    loadingAll,
+    roms.length,
+    total,
+  ]);
 
   const toggleSelect = useCallback((id: number) => {
     setSelectedIds((prev) => {
@@ -381,9 +456,18 @@ export function LibraryPage() {
   const deleteLocal = useCallback(async (rom: RomItem) => {
     if (!confirm(`Delete local files for "${rom.name}"? RomM is not touched.`)) return;
     await getApi().deleteLocal(rom.id);
-    await resetAndLoad();
+    setDownloadedIds((prev) => {
+      const next = new Set(prev);
+      next.delete(rom.id);
+      return next;
+    });
+    setDownloadedRoms((prev) => prev.filter((r) => r.id !== rom.id));
+    setRoms((prev) =>
+      prev.map((r) => (r.id === rom.id ? { ...r, downloaded: false } : r)),
+    );
+    if (detail?.id === rom.id) setDetail({ ...rom, downloaded: false });
     setMessage(`Removed local copy of ${rom.name}`);
-  }, [resetAndLoad]);
+  }, [detail?.id]);
 
   const downloadSelected = async () => {
     const items = visible
@@ -581,7 +665,7 @@ export function LibraryPage() {
             <div className="flex flex-wrap items-center gap-2">
               <div
                 className="flex rounded-md border border-line p-0.5 text-[11px]"
-                title="Local download status for this platform (loads full catalog when needed)"
+                title="Downloaded comes from the local library DB; Missing is the platform catalog minus those"
               >
                 {(
                   [
@@ -607,9 +691,9 @@ export function LibraryPage() {
             </div>
           </div>
 
-          {visible.length === 0 && !loadingMore && !loadingAll ? (
+          {visible.length === 0 && !loadingMore && !loadingAll && !loadingDownloaded ? (
             <div className="flex flex-1 items-center justify-center p-8 text-sm text-muted">
-              {loading ? "Loading…" : "No ROMs to show"}
+              {listLoading ? "Loading…" : "No ROMs to show"}
             </div>
           ) : (
             <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto p-3">
@@ -624,15 +708,17 @@ export function LibraryPage() {
                 onDeleteLocal={deleteLocal as (rom: import("./library/RomGrid").RomGridItem) => void}
                 footer={
                   <div ref={sentinelRef} className="flex h-10 items-center justify-center text-xs text-muted">
-                    {loadingAll
-                      ? `Loading catalog… ${roms.length}/${total || "…"}`
-                      : loadingMore
-                        ? "Loading more…"
-                        : hasMore
-                          ? null
-                          : roms.length > 0 && filter === "all"
-                            ? "End of list"
-                            : null}
+                    {loadingDownloaded
+                      ? "Loading downloaded…"
+                      : loadingAll
+                        ? `Loading catalog… ${roms.length}/${total || "…"}`
+                        : loadingMore
+                          ? "Loading more…"
+                          : hasMore
+                            ? null
+                            : roms.length > 0 && filter === "all"
+                              ? "End of list"
+                              : null}
                   </div>
                 }
               />

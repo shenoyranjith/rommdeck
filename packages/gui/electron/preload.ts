@@ -28,7 +28,8 @@ export interface RommDeckApi {
   onDownloadJob: (cb: (job: unknown) => void) => () => void;
   onDownloadQueue: (cb: (jobs: unknown[]) => void) => () => void;
   deleteLocal: (romId: number) => Promise<unknown>;
-  downloadedIds: () => Promise<number[]>;
+  downloadedIds: (platformSlug?: string) => Promise<number[]>;
+  getDownloadedRoms: (platformSlug: string) => Promise<unknown[]>;
   daemonStatus: () => Promise<unknown>;
   systemctl: (action: "enable" | "disable" | "start" | "stop" | "status") => Promise<{ ok: boolean; output: string }>;
   syncNow: () => Promise<unknown>;
@@ -63,7 +64,8 @@ const api: RommDeckApi = {
     return () => ipcRenderer.removeListener("downloads:queue", handler);
   },
   deleteLocal: (romId) => ipcRenderer.invoke("library:deleteLocal", romId),
-  downloadedIds: () => ipcRenderer.invoke("library:downloadedIds"),
+  downloadedIds: (platformSlug) => ipcRenderer.invoke("library:downloadedIds", platformSlug),
+  getDownloadedRoms: (platformSlug) => ipcRenderer.invoke("library:downloadedRoms", platformSlug),
   daemonStatus: () => ipcRenderer.invoke("daemon:status"),
   systemctl: (action) => ipcRenderer.invoke("daemon:systemctl", action),
   syncNow: () => ipcRenderer.invoke("sync:now"),

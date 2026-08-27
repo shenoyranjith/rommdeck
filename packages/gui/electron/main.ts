@@ -144,6 +144,7 @@ function registerIpc(): void {
   ipcMain.removeHandler("downloads:cancel");
   ipcMain.removeHandler("library:deleteLocal");
   ipcMain.removeHandler("library:downloadedIds");
+  ipcMain.removeHandler("library:downloadedRoms");
   ipcMain.removeHandler("daemon:status");
   ipcMain.removeHandler("daemon:systemctl");
   ipcMain.removeHandler("sync:now");
@@ -309,8 +310,44 @@ function registerIpc(): void {
     return deleteLocalRom(getIndex(), romId);
   });
 
-  ipcMain.handle("library:downloadedIds", () => {
-    return [...getIndex().getDownloadedRomIds()];
+  ipcMain.handle("library:downloadedIds", (_e, platformSlug?: string) => {
+    const index = getIndex();
+    if (platformSlug) return index.getDownloadedRomIdsForSlug(platformSlug);
+    return [...index.getDownloadedRomIds()];
+  });
+
+  ipcMain.handle("library:downloadedRoms", async (_e, platformSlug: string) => {
+    const cfg = loadConfig();
+    const client = createRommClient(cfg.romm.baseUrl, cfg.romm.apiToken);
+    const ids = getIndex().getDownloadedRomIdsForSlug(platformSlug);
+    if (ids.length === 0) return [];
+
+    const concurrency = 8;
+    const results: unknown[] = new Array(ids.length);
+    let cursor = 0;
+
+    async function worker() {
+      while (cursor < ids.length) {
+        const idx = cursor++;
+        const romId = ids[idx]!;
+        try {
+          const rom = await client.getRom(romId);
+          results[idx] = {
+            ...rom,
+            downloaded: true,
+            coverUrl: client.coverUrlFor(rom),
+            coverUrlSmall: client.coverUrlFor(rom, "small"),
+          };
+        } catch {
+          results[idx] = null;
+        }
+      }
+    }
+
+    await Promise.all(
+      Array.from({ length: Math.min(concurrency, ids.length) }, () => worker()),
+    );
+    return results.filter(Boolean);
   });
 
   ipcMain.handle("daemon:status", () => readDaemonStatus());

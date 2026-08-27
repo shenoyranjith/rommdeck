@@ -63,6 +63,14 @@ export class LibraryIndex {
     return new Set(rows.map((r) => r.rom_id));
   }
 
+  /** Distinct RomM rom_ids indexed for a platform slug. */
+  getDownloadedRomIdsForSlug(rommSlug: string): number[] {
+    const rows = this.db
+      .prepare(`SELECT DISTINCT rom_id FROM rom_files WHERE romm_slug = ? ORDER BY rom_id`)
+      .all(rommSlug) as { rom_id: number }[];
+    return rows.map((r) => r.rom_id);
+  }
+
   deleteByRomId(romId: number): IndexedRomFile[] {
     const rows = this.getByRomId(romId);
     this.db.prepare(`DELETE FROM rom_files WHERE rom_id = ?`).run(romId);
