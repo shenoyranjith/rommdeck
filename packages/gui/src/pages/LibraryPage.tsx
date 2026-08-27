@@ -33,7 +33,7 @@ export function LibraryPage() {
   }, []);
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-3">
+    <div className="@container flex h-full min-h-0 flex-col gap-3">
       <LibraryToolbar
         viewMode={viewMode}
         onViewModeChange={onViewModeChange}
@@ -66,10 +66,10 @@ export function LibraryPage() {
 
       <div
         className={cn(
-          "grid min-h-0 flex-1 grid-cols-1 gap-3",
+          "@container grid min-h-0 flex-1 grid-cols-1 gap-3",
           lib.focusedId != null
-            ? "md:grid-cols-[200px_minmax(0,1fr)_minmax(280px,320px)]"
-            : "md:grid-cols-[220px_1fr]",
+            ? "md:grid-cols-[minmax(11rem,20cqi)_minmax(0,1fr)_minmax(16rem,22cqi)]"
+            : "md:grid-cols-[minmax(11rem,22cqi)_minmax(0,1fr)]",
         )}
       >
         <PlatformSidebar

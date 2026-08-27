@@ -17,7 +17,7 @@ export function PlatformSidebar({
   onSelectPlatform: (platform: Platform) => void;
 }) {
   return (
-    <aside className="flex min-h-0 flex-col overflow-hidden border border-accent bg-bg0/60">
+    <aside className="@container flex min-h-0 flex-col overflow-hidden border border-accent bg-bg0/60">
       <div className="border-b border-accent/50 px-3 py-2.5">
         <div className="text-[11px] font-semibold tracking-[0.14em] text-accent uppercase">
           Platforms
@@ -66,7 +66,7 @@ export function PlatformSidebar({
               >
                 <span
                   className={cn(
-                    "grid size-6 shrink-0 place-items-center overflow-hidden border",
+                    "grid size-[clamp(1.25rem,12cqi,2.25rem)] shrink-0 place-items-center overflow-hidden border",
                     active ? "border-accent/70 bg-bg0" : "border-line bg-bg0",
                   )}
                 >
@@ -78,12 +78,15 @@ export function PlatformSidebar({
                       loading="lazy"
                     />
                   ) : (
-                    <span className="text-[9px] font-bold tracking-wide text-muted">
+                    <span className="text-[clamp(0.5rem,4cqi,0.625rem)] font-bold tracking-wide text-muted">
                       {(p.displayName || p.name).slice(0, 2).toUpperCase()}
                     </span>
                   )}
                 </span>
-                <span className="min-w-0 flex-1 truncate">
+                <span
+                  className="min-w-0 flex-1 text-xs leading-snug line-clamp-3"
+                  title={p.displayName || p.name}
+                >
                   {p.displayName || p.name}
                 </span>
                 <span className="shrink-0 font-mono text-xs text-accent">

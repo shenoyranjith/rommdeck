@@ -1,15 +1,33 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { getApi } from "../api";
-import { IconCheck, IconClock, IconDatabase, IconSync, IconWarn } from "./icons";
+import { formatBytes } from "../pages/library/format";
+import {
+  IconCircleCheck,
+  IconClock,
+  IconDatabase,
+  IconHardDrive,
+  IconSync,
+  IconWarn,
+} from "./icons";
 
 interface DaemonStatus {
   running: boolean;
   lastSyncAt: string | null;
   lastResult: "ok" | "error" | "partial" | null;
   lastError: string | null;
-  completedOps: number;
-  failedOps: number;
 }
+
+interface LibraryStats {
+  downloadedRoms: number;
+  storageBytes: number;
+}
+
+const STATUS_GRID =
+  "minmax(0,1fr) auto minmax(0,1fr) auto minmax(0,1fr) auto minmax(0,1fr) auto minmax(0,1fr) auto minmax(0,1fr)";
+
+/** Scales with the status bar’s own width (container queries). */
+const ICON_CLASS =
+  "size-6 @[56rem]:size-8 @[80rem]:size-10";
 
 function formatWhen(iso: string | null): string {
   if (!iso) return "—";
@@ -20,48 +38,95 @@ function formatWhen(iso: string | null): string {
   }
 }
 
-function Stat({
+function formatCount(n: number): string {
+  return n.toLocaleString();
+}
+
+function formatWithPct(count: number, total: number): string {
+  if (total <= 0) return formatCount(count);
+  const pct = Math.round((count / total) * 100);
+  return `${formatCount(count)} (${pct}%)`;
+}
+
+function scanStatusLabel(status: DaemonStatus | null): string {
+  if (!status) return "—";
+  if (status.running) return "Running";
+  switch (status.lastResult) {
+    case "ok":
+      return "Complete";
+    case "error":
+      return "Error";
+    case "partial":
+      return "Partial";
+    default:
+      return "Idle";
+  }
+}
+
+function StatDivider() {
+  return (
+    <div className="flex items-center self-stretch px-2 @[56rem]:px-3 @[80rem]:px-4">
+      <div className="h-1/2 w-px bg-accent" aria-hidden />
+    </div>
+  );
+}
+
+function StatCell({
   icon,
   label,
   value,
-  valueClass = "text-accent",
+  title,
 }: {
   icon: ReactNode;
   label: string;
   value: string;
-  valueClass?: string;
+  title?: string;
 }) {
   return (
-    <span className="inline-flex items-center gap-2.5">
-      <span className="text-accent">{icon}</span>
-      <span className="text-text/90">{label}</span>
-      <span className={`font-mono ${valueClass}`}>{value}</span>
-    </span>
+    <div
+      className="flex min-w-0 items-center justify-start gap-2 px-2 py-2 @[56rem]:gap-3 @[56rem]:px-3 @[56rem]:py-2.5 @[80rem]:px-4"
+      title={title}
+    >
+      <span className="shrink-0 text-accent">{icon}</span>
+      <div className="min-w-0 leading-tight">
+        <div className="truncate text-xs text-text @[56rem]:text-sm @[80rem]:text-base">
+          {label}
+        </div>
+        <div className="mt-0.5 truncate font-mono text-[11px] text-accent @[56rem]:text-xs @[80rem]:text-sm">
+          {value}
+        </div>
+      </div>
+    </div>
   );
 }
 
 export function StatusBar() {
   const [status, setStatus] = useState<DaemonStatus | null>(null);
-  const [queueLen, setQueueLen] = useState(0);
+  const [totalRoms, setTotalRoms] = useState(0);
+  const [stats, setStats] = useState<LibraryStats>({
+    downloadedRoms: 0,
+    storageBytes: 0,
+  });
 
   useEffect(() => {
     const refresh = async () => {
       try {
-        const s = (await getApi().daemonStatus()) as DaemonStatus;
-        setStatus(s);
+        const platforms = (await getApi().getPlatforms()) as {
+          rom_count?: number;
+        }[];
+        setTotalRoms(
+          platforms.reduce((sum, p) => sum + (p.rom_count ?? 0), 0),
+        );
       } catch {
         /* ignore until API ready */
       }
       try {
-        const jobs = (await getApi().listDownloads()) as { status: string }[];
-        setQueueLen(
-          jobs.filter(
-            (j) =>
-              j.status !== "done" &&
-              j.status !== "error" &&
-              j.status !== "cancelled",
-          ).length,
-        );
+        setStats(await getApi().getLibraryStats());
+      } catch {
+        /* ignore */
+      }
+      try {
+        setStatus((await getApi().daemonStatus()) as DaemonStatus);
       } catch {
         /* ignore */
       }
@@ -71,50 +136,55 @@ export function StatusBar() {
     return () => clearInterval(t);
   }, []);
 
-  const result = status?.lastResult;
+  const downloaded = stats.downloadedRoms;
+  const missing = Math.max(0, totalRoms - downloaded);
+  const scanLabel = scanStatusLabel(status);
+
+  const cells = [
+    {
+      icon: <IconDatabase className={ICON_CLASS} strokeWidth={2.15} />,
+      label: "Total ROMs",
+      value: formatCount(totalRoms),
+    },
+    {
+      icon: <IconCircleCheck className={ICON_CLASS} strokeWidth={2.15} />,
+      label: "Downloaded",
+      value: formatWithPct(downloaded, totalRoms),
+    },
+    {
+      icon: <IconWarn className={ICON_CLASS} strokeWidth={2.15} />,
+      label: "Missing",
+      value: formatWithPct(missing, totalRoms),
+    },
+    {
+      icon: <IconHardDrive className={ICON_CLASS} strokeWidth={2.15} />,
+      label: "Storage Used",
+      value: formatBytes(stats.storageBytes),
+    },
+    {
+      icon: <IconClock className={ICON_CLASS} strokeWidth={2.15} />,
+      label: "Last Scan",
+      value: formatWhen(status?.lastSyncAt ?? null),
+    },
+    {
+      icon: <IconSync className={ICON_CLASS} strokeWidth={2.15} />,
+      label: "Scan Status",
+      value: scanLabel,
+      title: status?.lastError ?? undefined,
+    },
+  ];
 
   return (
-    <footer className="flex shrink-0 flex-wrap items-center gap-x-7 gap-y-2 border border-accent bg-bg1/70 px-4 py-2.5 text-xs">
-      <Stat
-        icon={<IconDatabase className="size-3.5" />}
-        label="Queue"
-        value={String(queueLen)}
-      />
-      <Stat
-        icon={<IconSync className="size-3.5" />}
-        label="Daemon"
-        value={status?.running ? "on" : "off"}
-        valueClass={status?.running ? "text-ok" : "text-muted"}
-      />
-      <Stat
-        icon={
-          result === "error" ? (
-            <IconWarn className="size-3.5 text-danger" />
-          ) : (
-            <IconCheck className="size-3.5" />
-          )
-        }
-        label="Last sync"
-        value={formatWhen(status?.lastSyncAt ?? null)}
-      />
-      <Stat
-        icon={<IconClock className="size-3.5" />}
-        label="Ops"
-        value={`${status?.completedOps ?? 0} ok / ${status?.failedOps ?? 0} fail`}
-      />
-      {result && (
-        <span className="font-mono tracking-wide text-accent uppercase">
-          {result}
-        </span>
-      )}
-      {status?.lastError && (
-        <span
-          className="min-w-0 flex-1 truncate text-danger"
-          title={status.lastError}
-        >
-          {status.lastError}
-        </span>
-      )}
+    <footer
+      className="@container grid shrink-0 overflow-hidden border border-accent bg-bg0/60 text-xs"
+      style={{ gridTemplateColumns: STATUS_GRID }}
+    >
+      {cells.map((cell, index) => (
+        <Fragment key={cell.label}>
+          {index > 0 && <StatDivider />}
+          <StatCell {...cell} />
+        </Fragment>
+      ))}
     </footer>
   );
 }

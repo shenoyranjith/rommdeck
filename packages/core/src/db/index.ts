@@ -71,6 +71,20 @@ export class LibraryIndex {
     return rows.map((r) => r.rom_id);
   }
 
+  /** Aggregate local-library totals for the status bar. */
+  getStats(): { downloadedRoms: number; storageBytes: number } {
+    const downloaded = this.db
+      .prepare(`SELECT COUNT(DISTINCT rom_id) AS n FROM rom_files`)
+      .get() as { n: number };
+    const storage = this.db
+      .prepare(`SELECT COALESCE(SUM(size), 0) AS bytes FROM rom_files`)
+      .get() as { bytes: number };
+    return {
+      downloadedRoms: downloaded.n,
+      storageBytes: Number(storage.bytes) || 0,
+    };
+  }
+
   deleteByRomId(romId: number): IndexedRomFile[] {
     const rows = this.getByRomId(romId);
     this.db.prepare(`DELETE FROM rom_files WHERE rom_id = ?`).run(romId);

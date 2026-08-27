@@ -86,7 +86,7 @@ function createWindow(): void {
   console.log(`[rommdeck] preload: ${preload}`);
   mainWindow = new BrowserWindow({
     width: 1280,
-    height: 800,
+    height: 720,
     minWidth: 960,
     minHeight: 640,
     title: "RommDeck",
@@ -159,6 +159,7 @@ function registerIpc(): void {
   ipcMain.removeHandler("library:deleteLocal");
   ipcMain.removeHandler("library:downloadedIds");
   ipcMain.removeHandler("library:downloadedRoms");
+  ipcMain.removeHandler("library:stats");
   ipcMain.removeHandler("daemon:status");
   ipcMain.removeHandler("daemon:systemctl");
   ipcMain.removeHandler("sync:now");
@@ -395,6 +396,8 @@ function registerIpc(): void {
     );
     return results.filter(Boolean);
   });
+
+  ipcMain.handle("library:stats", () => getIndex().getStats());
 
   ipcMain.handle("daemon:status", () => readDaemonStatus());
 

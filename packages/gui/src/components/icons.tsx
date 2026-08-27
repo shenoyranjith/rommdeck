@@ -16,6 +16,8 @@ export {
   TriangleAlert as IconWarn,
   Database as IconDatabase,
   Clock as IconClock,
+  CircleCheck as IconCircleCheck,
+  HardDrive as IconHardDrive,
   Minus as IconMinimize,
   Square as IconMaximize,
   Copy as IconRestore,

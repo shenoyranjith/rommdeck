@@ -23,20 +23,25 @@ function columnsForWidth(width: number): number {
 }
 
 /** Cover (3:4) + fixed body (title + status). */
-function rowHeight(cardWidth: number): number {
-  const cover = cardWidth * (4 / 3);
-  const body = 88;
-  return Math.ceil(cover + body + GAP);
+function cardMetrics(cardWidth: number) {
+  const cover = Math.ceil(cardWidth * (4 / 3));
+  const body = 100;
+  const height = cover + body;
+  return { cover, body, height, row: height + GAP };
 }
 
 const RomCard = memo(function RomCard({
   rom,
+  height,
+  coverHeight,
   selectMode,
   selected,
   focused,
   onCardClick,
 }: {
   rom: RomGridItem;
+  height: number;
+  coverHeight: number;
   selectMode: boolean;
   selected: boolean;
   focused: boolean;
@@ -46,11 +51,12 @@ const RomCard = memo(function RomCard({
   return (
     <article
       className={cn(
-        "relative flex cursor-pointer flex-col overflow-hidden border bg-bg2",
+        "relative flex w-full min-w-0 cursor-pointer flex-col overflow-hidden border bg-bg2",
         focused || selected
           ? "border-accent shadow-[var(--glow)]"
           : "border-accent/80 hover:border-accent",
       )}
+      style={{ height }}
       onClick={() => onCardClick(rom)}
     >
       {selectMode && selected && (
@@ -62,17 +68,20 @@ const RomCard = memo(function RomCard({
           <IconCheck className="size-4" />
         </span>
       )}
-      <div className="aspect-[3/4] shrink-0 border-b border-accent/40 bg-bg0 text-xs text-muted">
+      <div
+        className="grid w-full shrink-0 place-items-center overflow-hidden border-b border-accent/40 bg-bg0"
+        style={{ height: coverHeight }}
+      >
         {cover ? (
           <img
             src={cover}
             alt=""
             decoding="async"
             draggable={false}
-            className="h-full w-full object-fill"
+            className="max-h-full max-w-full object-contain"
           />
         ) : (
-          <div className="grid h-full place-items-center gap-1 text-accent">
+          <div className="grid h-full place-items-center gap-1 text-xs text-accent">
             <IconWarn className="size-5 opacity-80" />
             <span className="text-[10px] font-semibold tracking-wide">
               NO COVER
@@ -80,7 +89,7 @@ const RomCard = memo(function RomCard({
           </div>
         )}
       </div>
-      <div className="flex shrink-0 flex-col gap-2 p-2.5">
+      <div className="flex min-h-0 shrink-0 flex-col gap-2 p-2.5">
         <div
           className="h-[2.6em] overflow-hidden text-sm leading-[1.3] text-ellipsis text-text [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]"
           title={rom.name}
@@ -142,7 +151,8 @@ export function RomGrid({
   const cols = useMemo(() => columnsForWidth(width), [width]);
   const cardWidth =
     width <= 0 ? MIN_CARD_WIDTH : (width - GAP * (cols - 1)) / cols;
-  const estimate = useMemo(() => rowHeight(cardWidth), [cardWidth]);
+  const metrics = useMemo(() => cardMetrics(cardWidth), [cardWidth]);
+  const estimate = metrics.row;
   const rowCount = cols > 0 ? Math.ceil(roms.length / cols) : 0;
 
   const estimateSize = useCallback(() => estimate, [estimate]);
@@ -176,7 +186,7 @@ export function RomGrid({
           return (
             <div
               key={virtualRow.key}
-              className="absolute top-0 left-0 w-full will-change-transform"
+              className="absolute top-0 left-0 w-full overflow-hidden will-change-transform"
               style={{
                 height: virtualRow.size,
                 transform: `translateY(${virtualRow.start}px)`,
@@ -190,6 +200,8 @@ export function RomGrid({
                 <RomCard
                   key={rom.id}
                   rom={rom}
+                  height={metrics.height}
+                  coverHeight={metrics.cover}
                   selectMode={selectMode}
                   selected={selectedIds.has(rom.id)}
                   focused={!selectMode && focusedId === rom.id}
