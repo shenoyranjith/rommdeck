@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { getApi } from "../api";
+import { cn } from "../lib/cn";
+import { PageHeader, Panel, btnClass } from "../components/ui";
 
 interface DownloadJob {
   id: string;
@@ -44,26 +46,26 @@ export function DownloadsPage() {
   }, []);
 
   return (
-    <div>
-      <div className="page-header">
-        <div>
-          <h1>Downloads</h1>
-          <p>Queue progress for ROM transfers into RetroDECK folders.</p>
-        </div>
-      </div>
+    <div className="flex h-full min-h-0 flex-col gap-4">
+      <PageHeader
+        title="Downloads"
+        description="Queue progress for ROM transfers into RetroDECK folders."
+      />
 
-      <div className="panel">
+      <Panel className="min-h-0 flex-1 overflow-auto">
         {jobs.length === 0 ? (
-          <div className="empty">No downloads yet. Queue items from Library.</div>
+          <div className="px-4 py-10 text-center text-sm text-muted">
+            No downloads yet. Queue items from Library.
+          </div>
         ) : (
-          <table className="table">
+          <table className="w-full border-collapse text-sm">
             <thead>
-              <tr>
-                <th>ROM</th>
-                <th>Platform</th>
-                <th>Status</th>
-                <th>Progress</th>
-                <th />
+              <tr className="border-b border-line text-left text-[11px] tracking-wide text-muted uppercase">
+                <th className="px-3 py-2.5 font-medium">ROM</th>
+                <th className="px-3 py-2.5 font-medium">Platform</th>
+                <th className="px-3 py-2.5 font-medium">Status</th>
+                <th className="px-3 py-2.5 font-medium">Progress</th>
+                <th className="px-3 py-2.5 font-medium" />
               </tr>
             </thead>
             <tbody>
@@ -75,25 +77,42 @@ export function DownloadsPage() {
                       ? 100
                       : 0;
                 return (
-                  <tr key={job.id}>
-                    <td>{job.romName}</td>
-                    <td className="mono">{job.rommSlug}</td>
-                    <td>
-                      <span className="status-pill">{job.status}</span>
-                      {job.error && <div className="muted">{job.error}</div>}
+                  <tr key={job.id} className="border-b border-line/70">
+                    <td className="px-3 py-3 text-text">{job.romName}</td>
+                    <td className="px-3 py-3 font-mono text-xs text-accent">{job.rommSlug}</td>
+                    <td className="px-3 py-3">
+                      <span
+                        className={cn(
+                          "inline-block rounded border border-line bg-bg2 px-2 py-0.5 font-mono text-[11px] uppercase",
+                          job.status === "done" && "border-ok/40 text-ok",
+                          job.status === "error" && "border-danger/40 text-danger",
+                          (job.status === "queued" || job.status === "downloading") &&
+                            "border-accent/40 text-accent",
+                        )}
+                      >
+                        {job.status}
+                      </span>
+                      {job.error && <div className="mt-1 text-xs text-muted">{job.error}</div>}
                     </td>
-                    <td style={{ minWidth: 160 }}>
-                      <div className="progress">
-                        <span style={{ width: `${pct}%` }} />
+                    <td className="min-w-[160px] px-3 py-3">
+                      <div className="h-1.5 overflow-hidden rounded-full bg-bg0">
+                        <div
+                          className="h-full bg-accent transition-[width] duration-200"
+                          style={{ width: `${pct}%`, boxShadow: "var(--glow)" }}
+                        />
                       </div>
-                      <div className="muted mono" style={{ marginTop: 4 }}>
+                      <div className="mt-1 font-mono text-[11px] text-muted">
                         {formatBytes(job.progressBytes)}
                         {job.totalBytes ? ` / ${formatBytes(job.totalBytes)}` : ""}
                       </div>
                     </td>
-                    <td>
+                    <td className="px-3 py-3 text-right">
                       {(job.status === "queued" || job.status === "downloading") && (
-                        <button className="btn btn-ghost" onClick={() => void getApi().cancelDownload(job.id)}>
+                        <button
+                          type="button"
+                          className={btnClass}
+                          onClick={() => void getApi().cancelDownload(job.id)}
+                        >
                           Cancel
                         </button>
                       )}
@@ -104,7 +123,7 @@ export function DownloadsPage() {
             </tbody>
           </table>
         )}
-      </div>
+      </Panel>
     </div>
   );
 }

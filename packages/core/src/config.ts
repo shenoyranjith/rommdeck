@@ -3,6 +3,9 @@ import { getConfigDir, getConfigPath } from "./paths.js";
 
 export type ConflictPolicy = "keep_both" | "server_wins" | "device_wins";
 export type SyncMode = "push_pull" | "pull_only" | "push_only";
+export type UiTheme = "candy" | "gold" | "vector" | "mint";
+
+export const UI_THEMES: readonly UiTheme[] = ["candy", "gold", "vector", "mint"] as const;
 
 export interface RommConfig {
   baseUrl: string;
@@ -28,10 +31,15 @@ export interface SyncConfig {
   deviceName: string;
 }
 
+export interface UiConfig {
+  theme: UiTheme;
+}
+
 export interface RommDeckConfig {
   romm: RommConfig;
   retrodeck: RetroDeckConfig;
   sync: SyncConfig;
+  ui: UiConfig;
   /** RomM slug → ES-DE folder overrides */
   platformMapOverrides: Record<string, string>;
 }
@@ -55,6 +63,9 @@ export const DEFAULT_CONFIG: RommDeckConfig = {
     conflictPolicy: "keep_both",
     deviceId: null,
     deviceName: "RommDeck",
+  },
+  ui: {
+    theme: "candy",
   },
   platformMapOverrides: {},
 };
@@ -85,12 +96,17 @@ function deepMerge<T>(base: T, over: Partial<T>): T {
 }
 
 export function loadConfig(): RommDeckConfig {
-  let cfg: RommDeckConfig = { ...DEFAULT_CONFIG };
+  let cfg: RommDeckConfig = deepMerge(DEFAULT_CONFIG, {});
 
   const path = getConfigPath();
   if (existsSync(path)) {
     const raw = JSON.parse(readFileSync(path, "utf8")) as Partial<RommDeckConfig>;
-    cfg = deepMerge(cfg, raw);
+    cfg = deepMerge(DEFAULT_CONFIG, raw);
+  }
+
+  // Normalize unknown / missing theme from older configs
+  if (!UI_THEMES.includes(cfg.ui?.theme)) {
+    cfg = { ...cfg, ui: { ...cfg.ui, theme: DEFAULT_CONFIG.ui.theme } };
   }
 
   return cfg;

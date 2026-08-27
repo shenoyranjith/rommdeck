@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { getApi } from "../api";
+import { cn } from "../lib/cn";
+import { Alert, PageHeader, Panel, btnClass, btnPrimaryClass } from "../components/ui";
 
 interface DaemonStatus {
   running: boolean;
@@ -76,118 +78,123 @@ export function SyncPage() {
     }
   };
 
-  const resultClass =
-    status?.lastResult === "ok"
-      ? "status-ok"
-      : status?.lastResult === "partial"
-        ? "status-partial"
-        : status?.lastResult === "error"
-          ? "status-error"
-          : "";
+  const conflicts = status?.pendingConflicts?.length
+    ? status.pendingConflicts
+    : (lastManual?.conflicts ?? []);
 
   return (
-    <div>
-      <div className="page-header">
-        <div>
-          <h1>Sync</h1>
-          <p>Device save/state sync with RomM. Daemon keeps running when the GUI is closed.</p>
-        </div>
-        <div className="toolbar">
-          <button className="btn btn-primary" disabled={busy} onClick={() => void syncNow()}>
-            {busy ? "Syncing…" : "Sync Now"}
-          </button>
-          <button className="btn" disabled={busy} onClick={() => void toggleDaemon(true)}>
-            Enable auto-sync
-          </button>
-          <button className="btn" disabled={busy} onClick={() => void toggleDaemon(false)}>
-            Disable auto-sync
-          </button>
-        </div>
-      </div>
+    <div className="flex h-full min-h-0 flex-col gap-4">
+      <PageHeader
+        title="Sync"
+        description="Device save/state sync with RomM. Daemon keeps running when the GUI is closed."
+        actions={
+          <>
+            <button
+              type="button"
+              className={btnPrimaryClass}
+              style={{ boxShadow: "var(--glow)" }}
+              disabled={busy}
+              onClick={() => void syncNow()}
+            >
+              {busy ? "Syncing…" : "Sync Now"}
+            </button>
+            <button type="button" className={btnClass} disabled={busy} onClick={() => void toggleDaemon(true)}>
+              Enable auto-sync
+            </button>
+            <button type="button" className={btnClass} disabled={busy} onClick={() => void toggleDaemon(false)}>
+              Disable auto-sync
+            </button>
+          </>
+        }
+      />
 
-      {message && <div className="message ok">{message}</div>}
-      {error && <div className="message err">{error}</div>}
+      {message && <Alert tone="ok">{message}</Alert>}
+      {error && <Alert tone="err">{error}</Alert>}
 
-      <div className="settings-grid">
-        <div className="panel">
-          <div className="panel-title">Daemon status</div>
-          <div style={{ padding: "1rem" }}>
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <Panel title="Daemon status">
+          <div className="space-y-2 p-4 text-sm">
             <p>
               Running:{" "}
-              <strong className={status?.running ? "status-ok" : "status-error"}>
+              <strong className={status?.running ? "text-ok" : "text-danger"}>
                 {status?.running ? "yes" : "no"}
               </strong>
-              {status?.pid != null && <span className="muted mono"> · pid {status.pid}</span>}
+              {status?.pid != null && (
+                <span className="ml-2 font-mono text-xs text-muted">pid {status.pid}</span>
+              )}
             </p>
             <p>
               Last sync:{" "}
-              <span className="mono">{status?.lastSyncAt ?? "never"}</span>
+              <span className="font-mono text-accent">{status?.lastSyncAt ?? "never"}</span>
             </p>
-            <p>
+            <p className="flex flex-wrap items-center gap-2">
               Last result:{" "}
-              <span className={`status-pill ${resultClass}`}>{status?.lastResult ?? "—"}</span>
+              <span
+                className={cn(
+                  "inline-block rounded border border-line bg-bg2 px-2 py-0.5 font-mono text-[11px] uppercase",
+                  status?.lastResult === "ok" && "border-ok/40 text-ok",
+                  status?.lastResult === "partial" && "border-warn/40 text-warn",
+                  status?.lastResult === "error" && "border-danger/40 text-danger",
+                )}
+              >
+                {status?.lastResult ?? "—"}
+              </span>
             </p>
             <p>
               Ops:{" "}
-              <span className="mono">
+              <span className="font-mono text-accent">
                 {status?.completedOps ?? 0} ok / {status?.failedOps ?? 0} failed
               </span>
             </p>
             {status?.lastError && (
-              <p className="message err" style={{ marginTop: "0.75rem" }}>
+              <div className="rounded-md border border-danger/40 bg-bg2 px-3 py-2 text-danger">
                 {status.lastError}
-              </p>
+              </div>
             )}
-            <p className="muted" style={{ fontSize: "0.8rem" }}>
-              Updated {status?.updatedAt ?? "—"}
-            </p>
+            <p className="text-xs text-muted">Updated {status?.updatedAt ?? "—"}</p>
           </div>
-        </div>
+        </Panel>
 
-        <div className="panel">
-          <div className="panel-title">Pending conflicts</div>
-          {(status?.pendingConflicts?.length ?? 0) === 0 && !lastManual?.conflicts.length ? (
-            <div className="empty">No pending conflicts</div>
+        <Panel title="Pending conflicts">
+          {conflicts.length === 0 ? (
+            <div className="px-4 py-10 text-center text-sm text-muted">No pending conflicts</div>
           ) : (
-            <table className="table">
+            <table className="w-full border-collapse text-sm">
               <thead>
-                <tr>
-                  <th>ROM ID</th>
-                  <th>File</th>
+                <tr className="border-b border-line text-left text-[11px] tracking-wide text-muted uppercase">
+                  <th className="px-3 py-2.5 font-medium">ROM ID</th>
+                  <th className="px-3 py-2.5 font-medium">File</th>
                 </tr>
               </thead>
               <tbody>
-                {(status?.pendingConflicts ?? lastManual?.conflicts ?? []).map((c, i) => (
-                  <tr key={`${c.rom_id}-${c.file}-${i}`}>
-                    <td className="mono">{c.rom_id}</td>
-                    <td>{c.file}</td>
+                {conflicts.map((c, i) => (
+                  <tr key={`${c.rom_id}-${c.file}-${i}`} className="border-b border-line/70">
+                    <td className="px-3 py-2.5 font-mono text-accent">{c.rom_id}</td>
+                    <td className="px-3 py-2.5 text-text">{c.file}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           )}
-        </div>
+        </Panel>
       </div>
 
       {lastManual && (
-        <div className="panel" style={{ marginTop: "1rem" }}>
-          <div className="panel-title">Last manual sync</div>
-          <div style={{ padding: "1rem" }}>
-            <p className="mono">
+        <Panel title="Last manual sync">
+          <div className="space-y-2 p-4 text-sm">
+            <p className="font-mono text-accent">
               session {lastManual.sessionId ?? "—"} · completed {lastManual.completed} · failed{" "}
               {lastManual.failed}
             </p>
             {lastManual.errors.length > 0 && (
-              <ul>
+              <ul className="list-inside list-disc text-muted">
                 {lastManual.errors.map((e) => (
-                  <li key={e} className="muted">
-                    {e}
-                  </li>
+                  <li key={e}>{e}</li>
                 ))}
               </ul>
             )}
           </div>
-        </div>
+        </Panel>
       )}
     </div>
   );

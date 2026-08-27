@@ -1,0 +1,107 @@
+@import "tailwindcss";
+
+/*
+ * Theme tokens — shared names; each [data-theme] only swaps colors.
+ * Shell rebuild (later) will consume these via Tailwind utilities like bg-bg0, text-accent.
+ */
+
+@theme inline {
+  --color-bg0: var(--bg0);
+  --color-bg1: var(--bg1);
+  --color-bg2: var(--bg2);
+  --color-bg3: var(--bg3);
+  --color-line: var(--line);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-dim: var(--accent-dim);
+  --color-accent-fg: var(--accent-fg);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
+  --color-ok: var(--ok);
+  --font-sans: var(--font);
+  --font-mono: var(--mono);
+}
+
+:root,
+[data-theme="candy"] {
+  --bg0: #050508;
+  --bg1: #0c0c12;
+  --bg2: #14141c;
+  --bg3: #1c1c28;
+  --line: #5a2040;
+  --text: #f4f0f5;
+  --muted: #a898a8;
+  --accent: #ff2d95;
+  --accent-dim: #b01f68;
+  --accent-fg: #14030c;
+  --warn: #e6b84d;
+  --danger: #ff6b6b;
+  --ok: #6bcf7f;
+  --font: "IBM Plex Sans", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, monospace;
+  --radius: 6px;
+  --glow: 0 0 12px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+[data-theme="gold"] {
+  --bg0: #080705;
+  --bg1: #100e0a;
+  --bg2: #1a1610;
+  --bg3: #242018;
+  --line: #6a5520;
+  --text: #f5f0e6;
+  --muted: #a89878;
+  --accent: #e6b84d;
+  --accent-dim: #9a7a28;
+  --accent-fg: #140f05;
+  --warn: #e6b84d;
+  --danger: #e26d6d;
+  --ok: #6bcf7f;
+}
+
+[data-theme="vector"] {
+  --bg0: #050505;
+  --bg1: #0c0c0c;
+  --bg2: #141414;
+  --bg3: #1c1c1c;
+  --line: #6a2020;
+  --text: #f5f0f0;
+  --muted: #a88888;
+  --accent: #ff3b3b;
+  --accent-dim: #a82828;
+  --accent-fg: #140505;
+  --warn: #e6b84d;
+  --danger: #ff6b6b;
+  --ok: #6bcf7f;
+}
+
+[data-theme="mint"] {
+  --bg0: #05080a;
+  --bg1: #0a1014;
+  --bg2: #121a20;
+  --bg3: #1a2430;
+  --line: #1f5a50;
+  --text: #e8f6f2;
+  --muted: #7fa098;
+  --accent: #3dffc8;
+  --accent-dim: #1f8f72;
+  --accent-fg: #041210;
+  --warn: #e6b84d;
+  --danger: #e26d6d;
+  --ok: #6bcf7f;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--font);
+  color: var(--text);
+  background: var(--bg0);
+}
+

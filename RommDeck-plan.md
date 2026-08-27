@@ -206,6 +206,7 @@ rommdeck/
   scripts/seed-dev-tree.sh
   scripts/deploy-syncd.sh  # optional rsync install of daemon
   data/platform-map.json
+  docs/mockups/          # UI direction mockups (Arcade/CRT)
   README.md
 ```
 
@@ -218,6 +219,52 @@ rommdeck/
 5. `rommdeck-syncd` + systemd user unit + watch/interval + status file
 6. GUI daemon controls + conflict policy settings
 7. README (Linux/RetroDECK workflow, token scopes, systemd)
+8. **UI shell + themes (in progress)** — vector shell lock; selectable color schemes; see section below
+
+## UI: Arcade / CRT shell + themes
+
+**Status:** In progress — tooling + shell + pages + theme picker done. Next: smoke-check / optional Radix skins.
+
+### Decisions
+
+- **Shell / layout source of truth:** `docs/mockups/shell-vector.png` (the Vector mockup). Every theme must use this structure; only accent colors change.
+- **UI stack:** **Tailwind CSS v4** (utilities + CSS-variable themes) + **Radix UI** (unstyled accessible primitives). Custom Vector shell — no MUI/Chakra/Ant. Optional shadcn copy-paste later if useful; not a hard dependency.
+- **Default theme:** `candy` (magenta accents on the vector shell).
+- **Selectable themes:** `candy` | `gold` | `vector` | `mint`.
+- **Persistence:** `ui.theme` in `~/.config/rommdeck/config.json`; Settings picker; apply via `data-theme` on the document root.
+- **Living plan:** This file is the source of truth; update whenever UI direction changes.
+- **Mockups:** Live in `docs/mockups/`. Always show mockups in chat when discussing UI.
+
+### Shell elements (from Vector)
+
+- Left sidebar: RD square brand, wordmark, icon nav with solid filled active state, bottom version box
+- Main framed content panel (thin accent border)
+- Library header + toolbar chrome (style existing controls; do not add new Scan Library product behavior)
+- Platforms rail + ROM grid (existing split, vector styling)
+- Bottom stats/status strip chrome (wire to existing counts/daemon status where possible)
+
+### Mockups
+
+| Role | File |
+| --- | --- |
+| Shell lock | `docs/mockups/shell-vector.png` |
+| Theme `vector` | `docs/mockups/theme-vector.png` |
+| Theme `candy` (default) | `docs/mockups/theme-candy.png` |
+| Theme `gold` | `docs/mockups/theme-gold.png` |
+| Theme `mint` | `docs/mockups/theme-mint.png` |
+
+### Implementation todos
+
+1. ~~Add Tailwind v4 + Radix to `packages/gui`; wire CSS vars to `[data-theme]`~~ **done**
+2. ~~Theme token sets for candy / gold / vector / mint~~ **done** (`themes.css`)
+3. ~~Rebuild App shell in Tailwind to match `shell-vector.png`~~ **done**
+4. ~~Restyle remaining pages (Downloads / Sync / Settings)~~ **done** — shared `components/ui.tsx`; legacy `app.css` reduced to fonts only. Radix skins still pending.
+5. ~~Add `ui.theme` to config + Settings theme picker; apply on load/save~~ **done**
+6. Smoke-check all routes + theme switching (desktop + narrow)
+
+### Later UI passes (not this one)
+
+Library cover shelf, Downloads queue motion, Sync conflict UX — same shell + theme system.
 
 ## v1 non-goals
 

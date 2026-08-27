@@ -40,6 +40,9 @@ if [[ ! -f "$MAIN_CFG" ]]; then
     "deviceId": null,
     "deviceName": "RommDeck"
   },
+  "ui": {
+    "theme": "candy"
+  },
   "platformMapOverrides": {}
 }
 EOF

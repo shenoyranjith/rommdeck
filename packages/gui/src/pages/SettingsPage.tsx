@@ -1,5 +1,18 @@
 import { useEffect, useState } from "react";
 import { getApi } from "../api";
+import {
+  Alert,
+  Field,
+  PageHeader,
+  Panel,
+  btnClass,
+  btnPrimaryClass,
+  inputClass,
+  selectClass,
+  textareaClass,
+} from "../components/ui";
+import { UI_THEMES, UI_THEME_LABELS, applyUiTheme, isUiTheme, type UiTheme } from "../theme";
+import { cn } from "../lib/cn";
 
 interface Config {
   romm: { baseUrl: string; apiToken: string };
@@ -18,6 +31,7 @@ interface Config {
     deviceId: number | null;
     deviceName: string;
   };
+  ui: { theme: UiTheme };
   platformMapOverrides: Record<string, string>;
 }
 
@@ -40,13 +54,29 @@ export function SettingsPage() {
   useEffect(() => {
     void (async () => {
       const c = (await getApi().getConfig()) as Config;
-      setCfg(c);
+      const theme = isUiTheme(c.ui?.theme) ? c.ui.theme : "candy";
+      const normalized = { ...c, ui: { theme } };
+      setCfg(normalized);
+      applyUiTheme(theme);
       setOverridesText(JSON.stringify(c.platformMapOverrides ?? {}, null, 2));
       setPaths((await getApi().getRetroDeckPaths()) as PathsInfo);
     })();
   }, []);
 
-  if (!cfg) return <div className="empty">Loading settings…</div>;
+  if (!cfg) {
+    return <div className="py-10 text-center text-sm text-muted">Loading settings…</div>;
+  }
+
+  const setTheme = async (theme: UiTheme) => {
+    applyUiTheme(theme);
+    setCfg({ ...cfg, ui: { theme } });
+    try {
+      const next = await getApi().saveConfig({ ui: { theme } });
+      setCfg(next as Config);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
 
   const save = async () => {
     setError(null);
@@ -63,6 +93,9 @@ export function SettingsPage() {
         platformMapOverrides,
       });
       setCfg(next as Config);
+      if (isUiTheme((next as Config).ui?.theme)) {
+        applyUiTheme((next as Config).ui.theme);
+      }
       setPaths((await getApi().getRetroDeckPaths()) as PathsInfo);
       setMessage("Settings saved");
     } catch (e) {
@@ -87,111 +120,146 @@ export function SettingsPage() {
   };
 
   return (
-    <div>
-      <div className="page-header">
-        <div>
-          <h1>Settings</h1>
-          <p>
-            Shared with <span className="mono">rommdeck-syncd</span>
-          </p>
-        </div>
-        <div className="toolbar">
-          <button className="btn" disabled={testing} onClick={() => void test()}>
-            Test connection
-          </button>
-          <button className="btn btn-primary" onClick={() => void save()}>
-            Save
-          </button>
-        </div>
-      </div>
+    <div className="flex h-full min-h-0 flex-col gap-4">
+      <PageHeader
+        title="Settings"
+        description={
+          <>
+            Shared with <span className="font-mono text-accent">rommdeck-syncd</span>
+          </>
+        }
+        actions={
+          <>
+            <button type="button" className={btnClass} disabled={testing} onClick={() => void test()}>
+              Test connection
+            </button>
+            <button
+              type="button"
+              className={btnPrimaryClass}
+              style={{ boxShadow: "var(--glow)" }}
+              onClick={() => void save()}
+            >
+              Save
+            </button>
+          </>
+        }
+      />
 
-      {message && <div className="message ok">{message}</div>}
-      {error && <div className="message err">{error}</div>}
+      {message && <Alert tone="ok">{message}</Alert>}
+      {error && <Alert tone="err">{error}</Alert>}
 
-      <div className="settings-grid">
-        <div className="panel">
-          <div className="panel-title">RomM</div>
-          <div style={{ padding: "1rem" }}>
-            <div className="field">
-              <label>Base URL</label>
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <Panel title="Appearance">
+          <div className="p-4">
+            <p className="mb-3 text-sm text-muted">
+              Color scheme only — shell layout stays the same. Applies immediately.
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              {UI_THEMES.map((theme) => {
+                const active = cfg.ui.theme === theme;
+                return (
+                  <button
+                    key={theme}
+                    type="button"
+                    onClick={() => void setTheme(theme)}
+                    className={cn(
+                      "rounded-md border px-3 py-3 text-left text-sm transition-colors",
+                      active
+                        ? "border-accent bg-accent text-accent-fg shadow-[var(--glow)]"
+                        : "border-line bg-bg0 text-text hover:border-accent/60",
+                    )}
+                  >
+                    <div className="font-semibold">{UI_THEME_LABELS[theme]}</div>
+                    <div className={cn("mt-0.5 font-mono text-[11px]", active ? "opacity-80" : "text-muted")}>
+                      {theme}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </Panel>
+
+        <Panel title="RomM">
+          <div className="p-4">
+            <Field label="Base URL">
               <input
+                className={inputClass}
                 value={cfg.romm.baseUrl}
                 onChange={(e) => setCfg({ ...cfg, romm: { ...cfg.romm, baseUrl: e.target.value } })}
                 placeholder="http://192.168.1.10:8080"
               />
-            </div>
-            <div className="field">
-              <label>Client API Token</label>
+            </Field>
+            <Field label="Client API Token">
               <input
+                className={inputClass}
                 type="password"
                 value={cfg.romm.apiToken}
                 onChange={(e) => setCfg({ ...cfg, romm: { ...cfg.romm, apiToken: e.target.value } })}
                 placeholder="rmm_…"
               />
-            </div>
+            </Field>
           </div>
-        </div>
+        </Panel>
 
-        <div className="panel">
-          <div className="panel-title">RetroDECK paths</div>
-          <div style={{ padding: "1rem" }}>
-            <div className="field">
-              <label>retrodeck.json path (empty = auto-detect)</label>
+        <Panel title="RetroDECK paths">
+          <div className="p-4">
+            <Field label="retrodeck.json path (empty = auto-detect)">
               <input
+                className={inputClass}
                 value={cfg.retrodeck.configPath}
                 onChange={(e) =>
                   setCfg({ ...cfg, retrodeck: { ...cfg.retrodeck, configPath: e.target.value } })
                 }
               />
-            </div>
-            <div className="field">
-              <label>roms_path override</label>
+            </Field>
+            <Field label="roms_path override">
               <input
+                className={inputClass}
                 value={cfg.retrodeck.romsPath}
                 onChange={(e) =>
                   setCfg({ ...cfg, retrodeck: { ...cfg.retrodeck, romsPath: e.target.value } })
                 }
               />
-            </div>
-            <div className="field">
-              <label>saves_path override</label>
+            </Field>
+            <Field label="saves_path override">
               <input
+                className={inputClass}
                 value={cfg.retrodeck.savesPath}
                 onChange={(e) =>
                   setCfg({ ...cfg, retrodeck: { ...cfg.retrodeck, savesPath: e.target.value } })
                 }
               />
-            </div>
-            <div className="field">
-              <label>states_path override</label>
+            </Field>
+            <Field label="states_path override">
               <input
+                className={inputClass}
                 value={cfg.retrodeck.statesPath}
                 onChange={(e) =>
                   setCfg({ ...cfg, retrodeck: { ...cfg.retrodeck, statesPath: e.target.value } })
                 }
               />
-            </div>
+            </Field>
             {paths && (
-              <p className="muted mono" style={{ fontSize: "0.75rem" }}>
+              <p className="mt-1 font-mono text-[11px] text-muted">
                 Resolved ({paths.source}): roms={paths.romsPath || "—"}
               </p>
             )}
           </div>
-        </div>
+        </Panel>
 
-        <div className="panel">
-          <div className="panel-title">Auto-sync</div>
-          <div style={{ padding: "1rem" }}>
-            <div className="field">
-              <label>Device name</label>
+        <Panel title="Auto-sync">
+          <div className="p-4">
+            <Field label="Device name">
               <input
+                className={inputClass}
                 value={cfg.sync.deviceName}
                 onChange={(e) => setCfg({ ...cfg, sync: { ...cfg.sync, deviceName: e.target.value } })}
               />
-            </div>
-            <div className="field">
-              <label>Sync mode</label>
+            </Field>
+            <Field label="Sync mode">
               <select
+                className={selectClass}
                 value={cfg.sync.mode}
                 onChange={(e) =>
                   setCfg({
@@ -204,10 +272,10 @@ export function SettingsPage() {
                 <option value="pull_only">pull_only</option>
                 <option value="push_only">push_only</option>
               </select>
-            </div>
-            <div className="field">
-              <label>Interval (seconds)</label>
+            </Field>
+            <Field label="Interval (seconds)">
               <input
+                className={inputClass}
                 type="number"
                 min={60}
                 value={cfg.sync.intervalSeconds}
@@ -218,10 +286,10 @@ export function SettingsPage() {
                   })
                 }
               />
-            </div>
-            <div className="field">
-              <label>FS debounce (seconds)</label>
+            </Field>
+            <Field label="FS debounce (seconds)">
               <input
+                className={inputClass}
                 type="number"
                 min={5}
                 value={cfg.sync.debounceSeconds}
@@ -232,10 +300,10 @@ export function SettingsPage() {
                   })
                 }
               />
-            </div>
-            <div className="field">
-              <label>Unattended conflict policy</label>
+            </Field>
+            <Field label="Unattended conflict policy">
               <select
+                className={selectClass}
                 value={cfg.sync.conflictPolicy}
                 onChange={(e) =>
                   setCfg({
@@ -251,31 +319,31 @@ export function SettingsPage() {
                 <option value="server_wins">server_wins</option>
                 <option value="device_wins">device_wins</option>
               </select>
-            </div>
-            <p className="muted">
-              Device ID: <span className="mono">{cfg.sync.deviceId ?? "not registered"}</span>
+            </Field>
+            <p className="text-sm text-muted">
+              Device ID:{" "}
+              <span className="font-mono text-accent">{cfg.sync.deviceId ?? "not registered"}</span>
             </p>
           </div>
-        </div>
+        </Panel>
 
-        <div className="panel">
-          <div className="panel-title">Platform map overrides</div>
-          <div style={{ padding: "1rem" }}>
-            <p className="muted" style={{ marginTop: 0 }}>
+        <Panel title="Platform map overrides" className="md:col-span-2">
+          <div className="p-4">
+            <p className="mb-3 text-sm text-muted">
               JSON object mapping RomM slug → ES-DE folder (e.g.{" "}
-              <span className="mono">{'{"ngc":"gc"}'}</span>).
+              <span className="font-mono text-accent">{'{"ngc":"gc"}'}</span>).
             </p>
-            <div className="field">
-              <label>Overrides</label>
+            <Field label="Overrides">
               <textarea
+                className={textareaClass}
                 rows={10}
                 value={overridesText}
                 onChange={(e) => setOverridesText(e.target.value)}
                 spellCheck={false}
               />
-            </div>
+            </Field>
           </div>
-        </div>
+        </Panel>
       </div>
     </div>
   );
