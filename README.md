@@ -2,8 +2,10 @@
 
 Desktop bridge between **[RomM](https://github.com/rommapp/romm)** (library source of truth) and **[RetroDECK](https://retrodeck.net/)** (local play target).
 
-- **GUI** (Electron): browse platforms, download ROMs into RetroDECK folders, delete local copies, configure sync
+- **GUI** (Electron): browse platforms, download ROMs into RetroDECK folders, manage the download queue, delete local copies, configure sync
 - **Daemon** (`rommdeck-syncd`): systemd user service that auto-syncs saves/states via RomM’s Device Sync Protocol
+
+On download, RommDeck writes ROM files **and** ES-DE metadata (gamelist + artwork from RomM) so RetroDECK does not need to scrape again.
 
 ## Requirements
 
@@ -15,12 +17,13 @@ Desktop bridge between **[RomM](https://github.com/rommapp/romm)** (library sour
 ## Monorepo layout
 
 ```
-packages/core/      Shared TypeScript (RomM client, downloads, SQLite index, sync)
+packages/core/      Shared TypeScript (RomM client, downloads, SQLite index, ES-DE metadata, sync)
 packages/gui/       Electron + React UI
 packages/syncd/     Background sync daemon CLI
 packaging/systemd/  rommdeck-syncd.service
 fixtures/           Optional sample retrodeck.json (non-RetroDECK fallback)
 data/platform-map.json
+docs/mockups/       UI mockups (themes + Downloads page)
 scripts/seed-dev-tree.sh
 scripts/deploy-syncd.sh
 ```
@@ -110,6 +113,27 @@ Optional path overrides: `ROMMDECK_CONFIG_DIR`, `ROMMDECK_DATA_DIR`.
 Downloads land in `{roms_path}/{esde_folder}/{filename}`.
 
 Bundled map (`data/platform-map.json`) inverts RomM’s [ES-DE example](https://github.com/rommapp/romm/blob/master/examples/config.es-de.example.yml) (RomM slug → ES-DE folder), e.g. `ngc` → `gc`, `genesis` → `megadrive`. Override per slug in Settings.
+
+## ES-DE metadata (planned)
+
+When a ROM download completes, RommDeck will sync metadata from RomM into RetroDECK’s ES-DE tree so games appear populated without scraping:
+
+| Asset | Location |
+| --- | --- |
+| Gamelists | `{rd_home}/ES-DE/gamelists/{esde_folder}/gamelist.xml` |
+| Artwork | `{rd_home}/ES-DE/downloaded_media/{esde_folder}/covers/` (and marquees, fanart, screenshots) |
+
+Text fields (`name`, `desc`, `genre`, `releasedate`, developer/publisher, etc.) come from RomM’s `metadatum` / provider metadata. Covers and other art are downloaded from RomM asset URLs. Local delete removes the matching gamelist entry and media files.
+
+See [`RommDeck-plan.md`](RommDeck-plan.md) for full Downloads + metadata spec.
+
+## Downloads queue (planned)
+
+The Downloads page shows **Active** and **Failed** sections with progress, cancel, retry, and dismiss. The queue persists to `~/.local/share/rommdeck/download-queue.json` across restarts. Quitting with active downloads shows a confirmation dialog; the queue resumes on next launch.
+
+UI mockups: `docs/mockups/downloads-vector-*.png`
+
+**Known gap (fix in next pass):** Library badges and status bar do not update when a download finishes until the app is refreshed. Implementation will subscribe to download completion events and sync the catalog cache live (same pattern as local delete today).
 
 ## Scripts
 
