@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { getApi } from "../api";
+import { cn } from "../lib/cn";
 import { IconClose, IconMaximize, IconMinimize, IconRestore } from "./icons";
 
 function ControlButton({
@@ -30,8 +31,8 @@ function ControlButton({
   );
 }
 
-/** Mockup-style frameless window controls (top-right). */
-export function WindowControls() {
+/** Mockup-style frameless window controls. */
+export function WindowControls({ className }: { className?: string }) {
   const [maximized, setMaximized] = useState(false);
 
   useEffect(() => {
@@ -55,7 +56,12 @@ export function WindowControls() {
   };
 
   return (
-    <div className="app-no-drag absolute top-1.5 right-1.5 z-40 flex items-center border border-accent/80 bg-bg0/90">
+    <div
+      className={cn(
+        "app-no-drag flex items-center border border-accent bg-bg0",
+        className,
+      )}
+    >
       <ControlButton
         label="Minimize"
         onClick={() => run(() => getApi().windowMinimize())}

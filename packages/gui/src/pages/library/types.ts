@@ -28,4 +28,6 @@ export interface RomItem {
 
 export type StatusFilter = "all" | "downloaded" | "missing";
 
+export type LibraryViewMode = "grid" | "list";
+
 export const PAGE_SIZE = 48;

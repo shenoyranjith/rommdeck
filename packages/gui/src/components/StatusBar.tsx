@@ -1,12 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { getApi } from "../api";
-import {
-  IconCheck,
-  IconClock,
-  IconDatabase,
-  IconSync,
-  IconWarn,
-} from "./icons";
+import { IconCheck, IconClock, IconDatabase, IconSync, IconWarn } from "./icons";
 
 interface DaemonStatus {
   running: boolean;
@@ -80,49 +74,47 @@ export function StatusBar() {
   const result = status?.lastResult;
 
   return (
-    <div className="shrink-0 px-3 pt-2 pb-2">
-      <footer className="flex flex-wrap items-center gap-x-7 gap-y-2 border border-accent bg-bg1/70 px-4 py-2.5 text-xs">
-        <Stat
-          icon={<IconDatabase className="size-3.5" />}
-          label="Queue"
-          value={String(queueLen)}
-        />
-        <Stat
-          icon={<IconSync className="size-3.5" />}
-          label="Daemon"
-          value={status?.running ? "on" : "off"}
-          valueClass={status?.running ? "text-ok" : "text-muted"}
-        />
-        <Stat
-          icon={
-            result === "error" ? (
-              <IconWarn className="size-3.5 text-danger" />
-            ) : (
-              <IconCheck className="size-3.5" />
-            )
-          }
-          label="Last sync"
-          value={formatWhen(status?.lastSyncAt ?? null)}
-        />
-        <Stat
-          icon={<IconClock className="size-3.5" />}
-          label="Ops"
-          value={`${status?.completedOps ?? 0} ok / ${status?.failedOps ?? 0} fail`}
-        />
-        {result && (
-          <span className="font-mono tracking-wide text-accent uppercase">
-            {result}
-          </span>
-        )}
-        {status?.lastError && (
-          <span
-            className="min-w-0 flex-1 truncate text-danger"
-            title={status.lastError}
-          >
-            {status.lastError}
-          </span>
-        )}
-      </footer>
-    </div>
+    <footer className="flex shrink-0 flex-wrap items-center gap-x-7 gap-y-2 border border-accent bg-bg1/70 px-4 py-2.5 text-xs">
+      <Stat
+        icon={<IconDatabase className="size-3.5" />}
+        label="Queue"
+        value={String(queueLen)}
+      />
+      <Stat
+        icon={<IconSync className="size-3.5" />}
+        label="Daemon"
+        value={status?.running ? "on" : "off"}
+        valueClass={status?.running ? "text-ok" : "text-muted"}
+      />
+      <Stat
+        icon={
+          result === "error" ? (
+            <IconWarn className="size-3.5 text-danger" />
+          ) : (
+            <IconCheck className="size-3.5" />
+          )
+        }
+        label="Last sync"
+        value={formatWhen(status?.lastSyncAt ?? null)}
+      />
+      <Stat
+        icon={<IconClock className="size-3.5" />}
+        label="Ops"
+        value={`${status?.completedOps ?? 0} ok / ${status?.failedOps ?? 0} fail`}
+      />
+      {result && (
+        <span className="font-mono tracking-wide text-accent uppercase">
+          {result}
+        </span>
+      )}
+      {status?.lastError && (
+        <span
+          className="min-w-0 flex-1 truncate text-danger"
+          title={status.lastError}
+        >
+          {status.lastError}
+        </span>
+      )}
+    </footer>
   );
 }

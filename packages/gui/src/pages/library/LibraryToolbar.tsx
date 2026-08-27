@@ -1,37 +1,101 @@
 import { cn } from "../../lib/cn";
-import { IconSearch, IconSelect } from "../../components/icons";
+import {
+  IconLayoutGrid,
+  IconLayoutList,
+  IconSearch,
+  IconSelectAll,
+  IconSelectEmpty,
+  IconSelectPartial,
+} from "../../components/icons";
+import type { LibraryViewMode } from "./types";
+
+export type SelectionState = "none" | "partial" | "all";
 
 export function LibraryToolbar({
+  viewMode,
+  onViewModeChange,
   searchInput,
   onSearchInputChange,
   selectMode,
-  selectedCount,
+  selectionState,
+  hasSelection,
   hasPlatform,
   busyPlatform,
-  onToggleSelectMode,
+  onSelectionButtonClick,
   onDownloadSelected,
   onDownloadPlatform,
 }: {
+  viewMode: LibraryViewMode;
+  onViewModeChange: (mode: LibraryViewMode) => void;
   searchInput: string;
   onSearchInputChange: (value: string) => void;
   selectMode: boolean;
-  selectedCount: number;
+  selectionState: SelectionState;
+  hasSelection: boolean;
   hasPlatform: boolean;
   busyPlatform: boolean;
-  onToggleSelectMode: () => void;
+  onSelectionButtonClick: () => void;
   onDownloadSelected: () => void;
   onDownloadPlatform: () => void;
 }) {
+  const SelectIcon =
+    selectionState === "all"
+      ? IconSelectAll
+      : selectionState === "partial"
+        ? IconSelectPartial
+        : IconSelectEmpty;
+
+  const selectionLabel = !selectMode
+    ? "Enter selection mode"
+    : selectionState === "all"
+      ? "Exit selection mode"
+      : "Select all ROMs in platform";
+
   return (
     <div className="flex flex-col gap-3">
       <h1 className="text-[1.75rem] leading-none font-semibold tracking-wide text-text">
         Library
       </h1>
       <div className="flex flex-wrap items-center gap-2">
-        <label className="relative min-w-[240px] flex-1">
+        <div
+          className="flex h-10 shrink-0 border border-accent p-0.5"
+          role="group"
+          aria-label="Library layout"
+        >
+          <button
+            type="button"
+            title="Grid view"
+            aria-pressed={viewMode === "grid"}
+            className={cn(
+              "grid h-full w-9 place-items-center transition-colors",
+              viewMode === "grid"
+                ? "bg-accent text-accent-fg"
+                : "text-text hover:bg-bg2",
+            )}
+            onClick={() => onViewModeChange("grid")}
+          >
+            <IconLayoutGrid className="size-4" strokeWidth={2.15} />
+          </button>
+          <button
+            type="button"
+            title="List view"
+            aria-pressed={viewMode === "list"}
+            className={cn(
+              "grid h-full w-9 place-items-center transition-colors",
+              viewMode === "list"
+                ? "bg-accent text-accent-fg"
+                : "text-text hover:bg-bg2",
+            )}
+            onClick={() => onViewModeChange("list")}
+          >
+            <IconLayoutList className="size-4" strokeWidth={2.15} />
+          </button>
+        </div>
+
+        <label className="relative h-10 min-w-[240px] flex-1">
           <IconSearch className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-accent" />
           <input
-            className="w-full border border-accent bg-bg0 py-2 pr-3 pl-9 text-sm text-text outline-none placeholder:text-muted/80 focus:border-accent"
+            className="h-full w-full border border-accent bg-bg0 pr-3 pl-9 text-sm text-text outline-none placeholder:text-muted/80 focus:border-accent"
             placeholder="Search library…"
             title="Searches RomM for the selected platform (full catalog, not only cards on screen)"
             value={searchInput}
@@ -41,43 +105,43 @@ export function LibraryToolbar({
         <button
           type="button"
           className={cn(
-            "inline-flex items-center gap-1.5 border px-3 py-2 text-sm",
+            "inline-flex h-10 w-10 shrink-0 items-center justify-center border",
             selectMode
               ? "border-accent bg-accent text-accent-fg"
               : "border-accent/70 bg-bg0 text-text hover:border-accent",
           )}
           style={selectMode ? { boxShadow: "var(--glow)" } : undefined}
-          onClick={onToggleSelectMode}
+          onClick={onSelectionButtonClick}
+          aria-label={selectionLabel}
           title={
-            selectMode ? "Exit selection mode" : "Select ROMs for bulk download"
+            selectMode
+              ? `${selectionLabel} (Esc to exit selection)`
+              : selectionLabel
           }
         >
-          <IconSelect className="size-4" />
-          {selectMode
-            ? selectedCount > 0
-              ? `Selecting (${selectedCount})`
-              : "Selecting"
-            : "Select"}
+          <SelectIcon className="size-4" strokeWidth={2.15} />
         </button>
-        {selectMode && (
+        {selectMode ? (
           <button
             type="button"
-            className="border border-accent/70 bg-bg0 px-3 py-2 text-sm text-text disabled:opacity-40"
-            disabled={selectedCount === 0}
+            className="h-10 shrink-0 border border-accent bg-accent px-3 text-sm font-semibold text-accent-fg disabled:opacity-40"
+            style={{ boxShadow: "var(--glow)" }}
+            disabled={!hasSelection || busyPlatform}
             onClick={onDownloadSelected}
           >
-            Download selected
+            {busyPlatform ? "Queuing…" : "Download selected"}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="h-10 shrink-0 border border-accent bg-accent px-3 text-sm font-semibold text-accent-fg disabled:opacity-40"
+            style={{ boxShadow: "var(--glow)" }}
+            disabled={!hasPlatform || busyPlatform}
+            onClick={onDownloadPlatform}
+          >
+            {busyPlatform ? "Queuing…" : "Download platform"}
           </button>
         )}
-        <button
-          type="button"
-          className="border border-accent bg-accent px-3 py-2 text-sm font-semibold text-accent-fg disabled:opacity-40"
-          style={{ boxShadow: "var(--glow)" }}
-          disabled={!hasPlatform || busyPlatform}
-          onClick={onDownloadPlatform}
-        >
-          {busyPlatform ? "Queuing…" : "Download platform"}
-        </button>
       </div>
     </div>
   );

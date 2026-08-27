@@ -22,7 +22,11 @@ export function useLibraryData() {
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  /** When true, every ROM in the current platform query is selected (lazy; IDs filled as rows load). */
+  const [selectAll, setSelectAll] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
+  const selectAllRef = useRef(false);
+  selectAllRef.current = selectAll;
   const [focusedId, setFocusedId] = useState<number | null>(null);
   const [detail, setDetail] = useState<RomItem | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
@@ -89,9 +93,16 @@ export function useLibraryData() {
     return () => clearTimeout(t);
   }, [searchInput]);
 
+  const exitSelectMode = useCallback(() => {
+    setSelectMode(false);
+    setSelectAll(false);
+    setSelectedIds(new Set());
+  }, []);
+
   const resetAndLoad = useCallback(async () => {
     const qid = ++queryIdRef.current;
     setSelectedIds(new Set());
+    setSelectAll(false);
     setSelectMode(false);
     setFocusedId(null);
     setDetail(null);
@@ -150,6 +161,12 @@ export function useLibraryData() {
       if (qid === queryIdRef.current) setLoading(false);
     }
   }, [selected, search]);
+
+  useEffect(() => {
+    setSelectAll(false);
+    setSelectedIds(new Set());
+    setSelectMode(false);
+  }, [filter]);
 
   useEffect(() => {
     if (filter === "downloaded") return;
@@ -241,6 +258,13 @@ export function useLibraryData() {
         setCatalog(key, merged, nextTotal);
         return merged;
       });
+      if (selectAllRef.current) {
+        setSelectedIds((prev) => {
+          const next = new Set(prev);
+          for (const rom of items) next.add(rom.id);
+          return next;
+        });
+      }
       setTotal(nextTotal);
       totalRef.current = nextTotal;
     } catch (e) {
@@ -297,6 +321,14 @@ export function useLibraryData() {
             return merged;
           });
 
+          if (selectAllRef.current && items.length > 0) {
+            setSelectedIds((prev) => {
+              const next = new Set(prev);
+              for (const rom of items) next.add(rom.id);
+              return next;
+            });
+          }
+
           if (items.length === 0) break;
           if (romsRef.current.length >= nextTotal) break;
         }
@@ -329,6 +361,26 @@ export function useLibraryData() {
     }
     return roms;
   }, [filter, roms, downloadedRoms, downloadedIds, search]);
+
+  const selectionTotal = useMemo(() => {
+    if (filter === "downloaded") return visible.length;
+    return total;
+  }, [filter, visible.length, total]);
+
+  /** IDs shown as selected in the grid/list (select-all covers every currently loaded row). */
+  const displaySelectedIds = useMemo(() => {
+    if (selectAll) return new Set(visible.map((r) => r.id));
+    return selectedIds;
+  }, [selectAll, visible, selectedIds]);
+
+  const selectionState = useMemo(() => {
+    if (!selectMode) return "none" as const;
+    if (selectAll) return "all" as const;
+    if (selectedIds.size === 0) return "none" as const;
+    if (selectionTotal > 0 && selectedIds.size >= selectionTotal)
+      return "all" as const;
+    return "partial" as const;
+  }, [selectMode, selectAll, selectedIds.size, selectionTotal]);
 
   const gridEmpty = visible.length === 0;
   const listLoading =
@@ -396,14 +448,24 @@ export function useLibraryData() {
     total,
   ]);
 
-  const toggleSelect = useCallback((id: number) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
+  const toggleSelect = useCallback(
+    (id: number) => {
+      if (selectAllRef.current) {
+        setSelectAll(false);
+        setSelectedIds(
+          new Set(visible.filter((r) => r.id !== id).map((r) => r.id)),
+        );
+        return;
+      }
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      });
+    },
+    [visible],
+  );
 
   const focusRom = useCallback((rom: RomItem) => {
     setFocusedId(rom.id);
@@ -416,18 +478,46 @@ export function useLibraryData() {
     setDetailError(null);
   }, []);
 
-  const toggleSelectMode = useCallback(() => {
-    setSelectMode((on) => {
-      if (on) {
-        setSelectedIds(new Set());
-        return false;
-      }
-      setFocusedId(null);
-      setDetail(null);
-      setDetailError(null);
-      return true;
-    });
+  const enterSelectMode = useCallback(() => {
+    setSelectMode(true);
+    setSelectAll(false);
+    setSelectedIds(new Set());
+    setFocusedId(null);
+    setDetail(null);
+    setDetailError(null);
   }, []);
+
+  const toggleSelectAll = useCallback(() => {
+    if (selectAll || (selectionTotal > 0 && selectedIds.size >= selectionTotal)) {
+      exitSelectMode();
+      return;
+    }
+    setSelectAll(true);
+    setSelectedIds(new Set(visible.map((r) => r.id)));
+  }, [
+    selectAll,
+    selectionTotal,
+    selectedIds.size,
+    visible,
+    exitSelectMode,
+  ]);
+
+  const onSelectionButtonClick = useCallback(() => {
+    if (!selectMode) {
+      enterSelectMode();
+      return;
+    }
+    toggleSelectAll();
+  }, [selectMode, enterSelectMode, toggleSelectAll]);
+
+  useEffect(() => {
+    if (!selectMode) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") exitSelectMode();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selectMode, exitSelectMode]);
 
   const onCardClick = useCallback(
     (rom: RomItem) => {
@@ -492,16 +582,93 @@ export function useLibraryData() {
   );
 
   const downloadSelected = useCallback(async () => {
+    if (!selected) return;
+
+    if (selectAll) {
+      if (filter === "downloaded") return;
+
+      // No search: reuse platform enqueue (pages server-side, skips local copies).
+      if (!search) {
+        setBusyPlatform(true);
+        setError(null);
+        try {
+          const result = await getApi().enqueuePlatform(
+            selected.id,
+            selected.slug,
+          );
+          if (result.queued === 0) {
+            setMessage(
+              result.skipped > 0
+                ? `All ${result.skipped} ROMs already downloaded for ${selected.name}`
+                : `No ROMs found for ${selected.name}`,
+            );
+          } else {
+            setMessage(
+              `Queued ${result.queued} of ${result.total} for ${selected.name}` +
+                (result.skipped ? ` (${result.skipped} already local)` : ""),
+            );
+          }
+        } catch (e) {
+          setError(e instanceof Error ? e.message : String(e));
+        } finally {
+          setBusyPlatform(false);
+        }
+        return;
+      }
+
+      // With search: page the matching catalog, then enqueue.
+      setBusyPlatform(true);
+      setError(null);
+      try {
+        const query = catalogQueryFrom(selected, search);
+        const items: { romId: number; platformSlug: string }[] = [];
+        let offset = 0;
+        let catalogTotal = Infinity;
+        while (offset < catalogTotal) {
+          const page = await fetchRomPage(query, { limit: 100, offset });
+          catalogTotal = page.total;
+          for (const rom of page.items) {
+            if (rom.downloaded || downloadedIds.has(rom.id)) continue;
+            items.push({
+              romId: rom.id,
+              platformSlug: rom.platform_slug ?? selected.slug,
+            });
+          }
+          offset += page.items.length;
+          if (page.items.length === 0) break;
+        }
+        if (items.length === 0) {
+          setMessage("Nothing to download for the current selection");
+          return;
+        }
+        await getApi().enqueueMany(items);
+        setMessage(`Queued ${items.length} downloads`);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setBusyPlatform(false);
+      }
+      return;
+    }
+
     const items = visible
       .filter((r) => selectedIds.has(r.id) && !r.downloaded)
       .map((r) => ({
         romId: r.id,
-        platformSlug: r.platform_slug ?? selected!.slug,
+        platformSlug: r.platform_slug ?? selected.slug,
       }));
     if (items.length === 0) return;
     await getApi().enqueueMany(items);
     setMessage(`Queued ${items.length} downloads`);
-  }, [visible, selectedIds, selected]);
+  }, [
+    selected,
+    selectAll,
+    filter,
+    search,
+    downloadedIds,
+    visible,
+    selectedIds,
+  ]);
 
   const downloadPlatform = useCallback(async () => {
     if (!selected) return;
@@ -534,7 +701,8 @@ export function useLibraryData() {
     selected,
     searchInput,
     setSearchInput,
-    selectedIds,
+    selectedIds: displaySelectedIds,
+    selectionState,
     selectMode,
     focusedId,
     detail,
@@ -558,7 +726,8 @@ export function useLibraryData() {
     scrollRef,
     sentinelRef,
     selectPlatform,
-    toggleSelectMode,
+    onSelectionButtonClick,
+    exitSelectMode,
     onCardClick,
     closeDetail,
     downloadOne,

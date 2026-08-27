@@ -63,7 +63,8 @@ export function App() {
           aria-hidden
           className="app-drag absolute inset-x-0 top-0 z-30 h-10"
         />
-        <WindowControls />
+        {/* Share top/right edges with the outer window accent ring */}
+        <WindowControls className="absolute top-0 right-0 z-40 border-t-0 border-r-0" />
 
         <aside className="app-no-drag relative z-20 flex w-[232px] shrink-0 flex-col border-r border-accent/80 bg-bg1/90 px-3 py-5">
           <div className="app-drag mb-10 flex w-full flex-col items-center gap-3.5 px-1">
@@ -104,16 +105,18 @@ export function App() {
           </div>
         </aside>
 
-        <div className="app-no-drag relative z-20 flex min-w-0 flex-1 flex-col bg-bg0">
-          <main className="min-h-0 flex-1 overflow-auto px-4 pt-4 pr-14 pb-1 md:px-5 md:pt-5 md:pr-16">
-            <Routes>
-              <Route path="/" element={<LibraryPage />} />
-              <Route path="/downloads" element={<DownloadsPage />} />
-              <Route path="/sync" element={<SyncPage />} />
-              <Route path="/settings" element={<SettingsPage />} />
-            </Routes>
-          </main>
-          <StatusBar />
+        <div className="app-no-drag relative z-20 flex min-h-0 min-w-0 flex-1 flex-col bg-bg0 pt-9 pr-3 pb-3 pl-2">
+          <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 md:px-5">
+            <main className="min-h-0 flex-1 overflow-auto">
+              <Routes>
+                <Route path="/" element={<LibraryPage />} />
+                <Route path="/downloads" element={<DownloadsPage />} />
+                <Route path="/sync" element={<SyncPage />} />
+                <Route path="/settings" element={<SettingsPage />} />
+              </Routes>
+            </main>
+            <StatusBar />
+          </div>
         </div>
       </div>
     </div>

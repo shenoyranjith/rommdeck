@@ -9,7 +9,9 @@ export {
   Settings as IconSettings,
   Search as IconSearch,
   Check as IconCheck,
-  SquareCheckBig as IconSelect,
+  Square as IconSelectEmpty,
+  SquareMinus as IconSelectPartial,
+  SquareCheckBig as IconSelectAll,
   X as IconClose,
   TriangleAlert as IconWarn,
   Database as IconDatabase,
@@ -17,4 +19,6 @@ export {
   Minus as IconMinimize,
   Square as IconMaximize,
   Copy as IconRestore,
+  LayoutGrid as IconLayoutGrid,
+  List as IconLayoutList,
 } from "lucide-react";

@@ -1,10 +1,12 @@
 import type { RefObject } from "react";
 import { cn } from "../../lib/cn";
 import { RomGrid } from "./RomGrid";
-import type { Platform, RomItem, StatusFilter } from "./types";
+import { RomList } from "./RomList";
+import type { LibraryViewMode, Platform, RomItem, StatusFilter } from "./types";
 
 export function RomBrowser({
   platform,
+  viewMode,
   filter,
   onFilterChange,
   rangeLabel,
@@ -26,6 +28,7 @@ export function RomBrowser({
   onDeleteLocal,
 }: {
   platform: Platform | null;
+  viewMode: LibraryViewMode;
   filter: StatusFilter;
   onFilterChange: (filter: StatusFilter) => void;
   rangeLabel: string;
@@ -46,6 +49,25 @@ export function RomBrowser({
   onDownload: (rom: RomItem) => void;
   onDeleteLocal: (rom: RomItem) => void;
 }) {
+  const footer = (
+    <div
+      ref={sentinelRef}
+      className="flex h-10 items-center justify-center text-xs text-muted"
+    >
+      {loadingDownloaded
+        ? "Loading downloaded…"
+        : loadingAll
+          ? `Loading catalog… ${romsCount}/${total || "…"}`
+          : loadingMore
+            ? "Loading more…"
+            : hasMore
+              ? null
+              : romsCount > 0 && filter === "all"
+                ? "End of list"
+                : null}
+    </div>
+  );
+
   return (
     <section className="flex min-h-0 flex-col overflow-hidden border border-accent bg-bg0/60">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-accent/50 px-3 py-2.5 text-sm">
@@ -92,34 +114,31 @@ export function RomBrowser({
         </div>
       ) : (
         <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto p-3">
-          <RomGrid
-            roms={visible}
-            scrollRef={scrollRef}
-            selectMode={selectMode}
-            selectedIds={selectedIds}
-            focusedId={focusedId}
-            onCardClick={onCardClick}
-            onDownload={onDownload}
-            onDeleteLocal={onDeleteLocal}
-            footer={
-              <div
-                ref={sentinelRef}
-                className="flex h-10 items-center justify-center text-xs text-muted"
-              >
-                {loadingDownloaded
-                  ? "Loading downloaded…"
-                  : loadingAll
-                    ? `Loading catalog… ${romsCount}/${total || "…"}`
-                    : loadingMore
-                      ? "Loading more…"
-                      : hasMore
-                        ? null
-                        : romsCount > 0 && filter === "all"
-                          ? "End of list"
-                          : null}
-              </div>
-            }
-          />
+          {viewMode === "list" ? (
+            <RomList
+              roms={visible}
+              scrollRef={scrollRef}
+              selectMode={selectMode}
+              selectedIds={selectedIds}
+              focusedId={focusedId}
+              onCardClick={onCardClick}
+              onDownload={onDownload}
+              onDeleteLocal={onDeleteLocal}
+              footer={footer}
+            />
+          ) : (
+            <RomGrid
+              roms={visible}
+              scrollRef={scrollRef}
+              selectMode={selectMode}
+              selectedIds={selectedIds}
+              focusedId={focusedId}
+              onCardClick={onCardClick}
+              onDownload={onDownload}
+              onDeleteLocal={onDeleteLocal}
+              footer={footer}
+            />
+          )}
         </div>
       )}
     </section>

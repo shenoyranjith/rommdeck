@@ -1,23 +1,52 @@
+import { useCallback, useState } from "react";
 import { cn } from "../lib/cn";
 import { LibraryToolbar } from "./library/LibraryToolbar";
 import { PlatformSidebar } from "./library/PlatformSidebar";
 import { RomBrowser } from "./library/RomBrowser";
 import { RomDetailPane } from "./library/RomDetailPane";
 import { useLibraryData } from "./library/useLibraryData";
+import type { LibraryViewMode } from "./library/types";
+
+const VIEW_MODE_KEY = "rommdeck.library.viewMode";
+
+function readStoredViewMode(): LibraryViewMode {
+  try {
+    const raw = localStorage.getItem(VIEW_MODE_KEY);
+    if (raw === "grid" || raw === "list") return raw;
+  } catch {
+    /* ignore */
+  }
+  return "grid";
+}
 
 export function LibraryPage() {
   const lib = useLibraryData();
+  const [viewMode, setViewMode] = useState<LibraryViewMode>(readStoredViewMode);
+
+  const onViewModeChange = useCallback((mode: LibraryViewMode) => {
+    setViewMode(mode);
+    try {
+      localStorage.setItem(VIEW_MODE_KEY, mode);
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
       <LibraryToolbar
+        viewMode={viewMode}
+        onViewModeChange={onViewModeChange}
         searchInput={lib.searchInput}
         onSearchInputChange={lib.setSearchInput}
         selectMode={lib.selectMode}
-        selectedCount={lib.selectedIds.size}
+        selectionState={lib.selectionState}
+        hasSelection={
+          lib.selectionState === "all" || lib.selectionState === "partial"
+        }
         hasPlatform={!!lib.selected}
         busyPlatform={lib.busyPlatform}
-        onToggleSelectMode={lib.toggleSelectMode}
+        onSelectionButtonClick={lib.onSelectionButtonClick}
         onDownloadSelected={() => void lib.downloadSelected()}
         onDownloadPlatform={() => void lib.downloadPlatform()}
       />
@@ -52,6 +81,7 @@ export function LibraryPage() {
 
         <RomBrowser
           platform={lib.selected}
+          viewMode={viewMode}
           filter={lib.filter}
           onFilterChange={lib.setFilter}
           rangeLabel={lib.rangeLabel}
