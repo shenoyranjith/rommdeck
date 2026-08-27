@@ -171,7 +171,12 @@ function registerIpc(): void {
   ipcMain.handle("romm:platforms", async () => {
     const cfg = loadConfig();
     const client = createRommClient(cfg.romm.baseUrl, cfg.romm.apiToken);
-    return client.getPlatforms();
+    const platforms = await client.getPlatforms();
+    return platforms.map((p) => ({
+      ...p,
+      logoUrl: client.logoUrlFor(p),
+      displayName: p.display_name || p.custom_name || p.name,
+    }));
   });
 
   ipcMain.handle(

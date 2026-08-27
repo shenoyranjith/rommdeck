@@ -4,6 +4,10 @@ export interface RommPlatform {
   slug: string;
   fs_slug?: string;
   rom_count?: number;
+  custom_name?: string | null;
+  display_name?: string | null;
+  url_logo?: string | null;
+  logo_path?: string | null;
 }
 
 export interface RommRomFile {

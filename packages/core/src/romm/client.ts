@@ -148,6 +148,16 @@ export class RommClient {
     );
   }
 
+  /** Absolute logo URL for a platform (RomM-hosted path or remote url_logo). */
+  logoUrlFor(platform: RommPlatform): string | null {
+    return (
+      this.resolveAssetUrl(platform.logo_path) ??
+      (platform.url_logo && /^https?:\/\//i.test(platform.url_logo)
+        ? platform.url_logo
+        : this.resolveAssetUrl(platform.url_logo))
+    );
+  }
+
   async getRom(id: number): Promise<RommRom> {
     return this.request<RommRom>("GET", `/api/roms/${id}`);
   }
