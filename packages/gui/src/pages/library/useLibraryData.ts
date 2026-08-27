@@ -7,6 +7,11 @@ import {
 } from "react";
 import { getApi } from "../../api";
 import {
+  catalogQueryFrom,
+  fetchRomPage,
+  mergeRomPages,
+} from "./fetchCatalog";
+import {
   catalogCacheKey,
   getCatalog,
   getDownloadedIds,
@@ -17,7 +22,7 @@ import {
   setDownloadedIds as cacheDownloadedIds,
   setDownloadedRoms as cacheDownloadedRoms,
 } from "./romCache";
-import { PAGE_SIZE, type Platform, type RomItem, type StatusFilter } from "./types";
+import type { Platform, RomItem, StatusFilter } from "./types";
 
 export function useLibraryData() {
   const [platforms, setPlatforms] = useState<Platform[]>([]);
@@ -129,16 +134,10 @@ export function useLibraryData() {
     setTotal(0);
     setLoading(true);
     try {
-      const result = await getApi().getRoms({
-        platformId: selected?.id,
-        platformSlug: selected?.slug,
-        searchTerm: search || undefined,
-        limit: PAGE_SIZE,
+      const { items, total: nextTotal } = await fetchRomPage(catalogQueryFrom(selected, search), {
         offset: 0,
       });
       if (qid !== queryIdRef.current) return;
-      const items = result.items as RomItem[];
-      const nextTotal = result.total ?? items.length;
       setRoms(items);
       setTotal(nextTotal);
       romsRef.current = items;
@@ -234,19 +233,12 @@ export function useLibraryData() {
     setLoadingMore(true);
     setError(null);
     try {
-      const result = await getApi().getRoms({
-        platformId: selected?.id,
-        platformSlug: selected?.slug,
-        searchTerm: search || undefined,
-        limit: PAGE_SIZE,
+      const { items, total: nextTotal } = await fetchRomPage(catalogQueryFrom(selected, search), {
         offset,
       });
       if (qid !== queryIdRef.current) return;
-      const items = result.items as RomItem[];
-      const nextTotal = result.total ?? offset + items.length;
       setRoms((prev) => {
-        const seen = new Set(prev.map((r) => r.id));
-        const merged = [...prev, ...items.filter((r) => !seen.has(r.id))];
+        const merged = mergeRomPages(prev, items);
         romsRef.current = merged;
         setCatalog(key, merged, nextTotal);
         return merged;
@@ -271,6 +263,7 @@ export function useLibraryData() {
 
     const qid = queryIdRef.current;
     const key = catalogCacheKey(selected?.id, search);
+    const query = catalogQueryFrom(selected, search);
     let cancelled = false;
     setLoadingAll(true);
     setError(null);
@@ -282,23 +275,17 @@ export function useLibraryData() {
           const catalogTotal = totalRef.current;
           if (offset >= catalogTotal) break;
 
-          const result = await getApi().getRoms({
-            platformId: selected?.id,
-            platformSlug: selected?.slug,
-            searchTerm: search || undefined,
-            limit: Math.max(PAGE_SIZE, 100),
+          const { items, total: nextTotal } = await fetchRomPage(query, {
+            limit: 100,
             offset,
           });
           if (cancelled || qid !== queryIdRef.current) return;
 
-          const items = result.items as RomItem[];
-          const nextTotal = result.total ?? offset + items.length;
           setTotal(nextTotal);
           totalRef.current = nextTotal;
 
           setRoms((prev) => {
-            const seen = new Set(prev.map((r) => r.id));
-            const merged = [...prev, ...items.filter((r) => !seen.has(r.id))];
+            const merged = mergeRomPages(prev, items);
             romsRef.current = merged;
             setCatalog(key, merged, nextTotal);
             return merged;
