@@ -1,15 +1,14 @@
 import {
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
-import * as Tooltip from "@radix-ui/react-tooltip";
 import { getApi } from "../api";
 import { cn } from "../lib/cn";
-import { IconCheck, IconClose, IconSearch, IconSelect } from "../components/icons";
+import { IconClose, IconSearch, IconSelect } from "../components/icons";
+import { RomGrid } from "./library/RomGrid";
 
 const PAGE_SIZE = 48;
 
@@ -24,52 +23,6 @@ function formatBytes(n: number | undefined | null): string {
     i++;
   } while (v >= 1024 && i < units.length - 1);
   return `${v < 10 && i > 0 ? v.toFixed(1) : Math.round(v)} ${units[i]}`;
-}
-
-/** Two-line clamped title; full name in a tooltip only when truncated. */
-function RomName({ name }: { name: string }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [truncated, setTruncated] = useState(false);
-  const [open, setOpen] = useState(false);
-
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const check = () => setTruncated(el.scrollHeight > el.clientHeight + 1);
-    check();
-    const ro = new ResizeObserver(check);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [name]);
-
-  return (
-    <Tooltip.Root
-      delayDuration={250}
-      open={truncated && open}
-      onOpenChange={(next) => {
-        if (truncated) setOpen(next);
-      }}
-    >
-      <Tooltip.Trigger asChild>
-        <div
-          ref={ref}
-          className="h-[2.6em] overflow-hidden text-sm leading-[1.3] text-ellipsis text-text [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]"
-        >
-          {name}
-        </div>
-      </Tooltip.Trigger>
-      <Tooltip.Portal>
-        <Tooltip.Content
-          side="top"
-          sideOffset={6}
-          className="z-50 max-w-xs rounded-md border border-line bg-bg2 px-2.5 py-1.5 text-xs leading-snug text-text shadow-lg"
-        >
-          {name}
-          <Tooltip.Arrow className="fill-bg2" />
-        </Tooltip.Content>
-      </Tooltip.Portal>
-    </Tooltip.Root>
-  );
 }
 
 interface Platform {
@@ -310,10 +263,20 @@ export function LibraryPage() {
     };
   }, [needsFullCatalog, loading, selected, search]);
 
+  const visible = useMemo(() => {
+    return roms.filter((r) => {
+      if (filter === "downloaded") return r.downloaded;
+      if (filter === "missing") return !r.downloaded;
+      return true;
+    });
+  }, [roms, filter]);
+
+  const gridEmpty = visible.length === 0;
+
   useEffect(() => {
     const root = scrollRef.current;
     const sentinel = sentinelRef.current;
-    if (!root || !sentinel || needsFullCatalog) return;
+    if (!root || !sentinel || needsFullCatalog || gridEmpty) return;
     const io = new IntersectionObserver(
       (entries) => {
         if (entries.some((e) => e.isIntersecting)) void loadMore();
@@ -322,7 +285,7 @@ export function LibraryPage() {
     );
     io.observe(sentinel);
     return () => io.disconnect();
-  }, [loadMore, roms.length, loading, needsFullCatalog]);
+  }, [loadMore, loading, needsFullCatalog, gridEmpty]);
 
   useEffect(() => {
     if (focusedId == null) {
@@ -346,14 +309,6 @@ export function LibraryPage() {
     })();
   }, [focusedId]);
 
-  const visible = useMemo(() => {
-    return roms.filter((r) => {
-      if (filter === "downloaded") return r.downloaded;
-      if (filter === "missing") return !r.downloaded;
-      return true;
-    });
-  }, [roms, filter]);
-
   const rangeLabel = useMemo(() => {
     if (loading && roms.length === 0) return "loading…";
     if (loadingAll) return `Loading ${roms.length} of ${total}…`;
@@ -369,41 +324,46 @@ export function LibraryPage() {
     return `${roms.length} of ${total}`;
   }, [roms, total, loading, loadingAll, filter]);
 
-  const toggleSelect = (id: number) => {
+  const toggleSelect = useCallback((id: number) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
-  };
+  }, []);
 
-  const focusRom = (rom: RomItem) => {
+  const focusRom = useCallback((rom: RomItem) => {
     setFocusedId(rom.id);
     setDetail(rom);
-  };
+  }, []);
 
-  const closeDetail = () => {
+  const closeDetail = useCallback(() => {
     setFocusedId(null);
     setDetail(null);
     setDetailError(null);
-  };
+  }, []);
 
-  const toggleSelectMode = () => {
+  const toggleSelectMode = useCallback(() => {
     setSelectMode((on) => {
       if (on) {
         setSelectedIds(new Set());
         return false;
       }
-      closeDetail();
+      setFocusedId(null);
+      setDetail(null);
+      setDetailError(null);
       return true;
     });
-  };
+  }, []);
 
-  const onCardClick = (rom: RomItem) => {
-    if (selectMode) toggleSelect(rom.id);
-    else focusRom(rom);
-  };
+  const onCardClick = useCallback(
+    (rom: RomItem) => {
+      if (selectMode) toggleSelect(rom.id);
+      else focusRom(rom);
+    },
+    [selectMode, toggleSelect, focusRom],
+  );
 
   const selectPlatform = (p: Platform) => {
     setSearchInput("");
@@ -411,12 +371,19 @@ export function LibraryPage() {
     setSelected(p);
   };
 
-  const downloadOne = async (rom: RomItem) => {
+  const downloadOne = useCallback(async (rom: RomItem) => {
     const slug = rom.platform_slug ?? selected?.slug;
     if (!slug) return;
     await getApi().enqueueDownload(rom.id, slug);
     setMessage(`Queued ${rom.name}`);
-  };
+  }, [selected?.slug]);
+
+  const deleteLocal = useCallback(async (rom: RomItem) => {
+    if (!confirm(`Delete local files for "${rom.name}"? RomM is not touched.`)) return;
+    await getApi().deleteLocal(rom.id);
+    await resetAndLoad();
+    setMessage(`Removed local copy of ${rom.name}`);
+  }, [resetAndLoad]);
 
   const downloadSelected = async () => {
     const items = visible
@@ -453,13 +420,6 @@ export function LibraryPage() {
     } finally {
       setBusyPlatform(false);
     }
-  };
-
-  const deleteLocal = async (rom: RomItem) => {
-    if (!confirm(`Delete local files for "${rom.name}"? RomM is not touched.`)) return;
-    await getApi().deleteLocal(rom.id);
-    await resetAndLoad();
-    setMessage(`Removed local copy of ${rom.name}`);
   };
 
   const detailSize =
@@ -653,91 +613,29 @@ export function LibraryPage() {
             </div>
           ) : (
             <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto p-3">
-              <Tooltip.Provider delayDuration={250} skipDelayDuration={0}>
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] items-start gap-3">
-                {visible.map((rom) => {
-                  const cover = rom.coverUrl || rom.path_cover_small || rom.url_cover;
-                  const checked = selectedIds.has(rom.id);
-                  const focused = !selectMode && focusedId === rom.id;
-                  return (
-                    <article
-                      key={rom.id}
-                      className={cn(
-                        "relative flex cursor-pointer flex-col overflow-hidden rounded-md border bg-bg2 transition-colors",
-                        focused
-                          ? "border-accent shadow-[var(--glow)]"
-                          : checked
-                            ? "border-accent shadow-[var(--glow)]"
-                            : "border-line hover:border-accent/60",
-                      )}
-                      onClick={() => onCardClick(rom)}
-                    >
-                      {selectMode && checked && (
-                        <span
-                          className="absolute top-2 right-2 z-10 grid size-7 place-items-center rounded-full border border-accent bg-accent text-accent-fg"
-                          style={{ boxShadow: "var(--glow)" }}
-                          aria-hidden
-                        >
-                          <IconCheck className="size-4" />
-                        </span>
-                      )}
-                      <div className="grid aspect-[3/4] shrink-0 place-items-center bg-bg0 text-xs text-muted">
-                        {cover ? (
-                          <img src={cover} alt="" loading="lazy" className="h-full w-full object-cover" />
-                        ) : (
-                          <span className="text-accent/80">NO COVER</span>
-                        )}
-                      </div>
-                      <div className="flex shrink-0 flex-col gap-2 p-2.5">
-                        <RomName name={rom.name} />
-                        <span
-                          className={cn(
-                            "inline-flex h-5 w-fit items-center rounded px-1.5 text-[10px] font-semibold tracking-wide uppercase",
-                            rom.downloaded
-                              ? "bg-ok/15 text-ok"
-                              : "border border-warn/50 text-warn",
-                          )}
-                        >
-                          {rom.downloaded ? "Downloaded" : "Missing"}
-                        </span>
-                        {!selectMode && (
-                          <div className="flex gap-1.5" onClick={(e) => e.stopPropagation()}>
-                            {!rom.downloaded ? (
-                              <button
-                                type="button"
-                                className="h-8 flex-1 rounded border border-accent bg-accent/15 px-2 text-xs font-medium text-accent"
-                                onClick={() => void downloadOne(rom)}
-                              >
-                                Download
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                className="h-8 flex-1 rounded border border-danger/50 px-2 text-xs text-danger"
-                                onClick={() => void deleteLocal(rom)}
-                              >
-                                Delete local
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </article>
-                  );
-                })}
-              </div>
-              <div ref={sentinelRef} className="flex h-10 items-center justify-center text-xs text-muted">
-                {loadingAll
-                  ? `Loading catalog… ${roms.length}/${total || "…"}`
-                  : loadingMore
-                    ? "Loading more…"
-                    : hasMore
-                      ? null
-                      : roms.length > 0 && filter === "all"
-                        ? "End of list"
-                        : null}
-              </div>
-              </Tooltip.Provider>
+              <RomGrid
+                roms={visible}
+                scrollRef={scrollRef}
+                selectMode={selectMode}
+                selectedIds={selectedIds}
+                focusedId={focusedId}
+                onCardClick={onCardClick as (rom: import("./library/RomGrid").RomGridItem) => void}
+                onDownload={downloadOne as (rom: import("./library/RomGrid").RomGridItem) => void}
+                onDeleteLocal={deleteLocal as (rom: import("./library/RomGrid").RomGridItem) => void}
+                footer={
+                  <div ref={sentinelRef} className="flex h-10 items-center justify-center text-xs text-muted">
+                    {loadingAll
+                      ? `Loading catalog… ${roms.length}/${total || "…"}`
+                      : loadingMore
+                        ? "Loading more…"
+                        : hasMore
+                          ? null
+                          : roms.length > 0 && filter === "all"
+                            ? "End of list"
+                            : null}
+                  </div>
+                }
+              />
             </div>
           )}
         </section>

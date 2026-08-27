@@ -21,6 +21,7 @@
     "@radix-ui/react-switch": "^1.3.7",
     "@radix-ui/react-tooltip": "^1.2.16",
     "@rommdeck/core": "*",
+    "@tanstack/react-virtual": "^3.14.10",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.1.5"
