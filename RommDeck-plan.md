@@ -1,6 +1,6 @@
 ---
 name: RommDeck Desktop Bridge
-overview: 'Build a Linux desktop stack (Electron GUI + systemd user daemon, shared Node/TypeScript core) that browses RomM, manages RetroDECK ROM downloads, and keeps saves/states auto-synced in the background. Dev on Mac against LAN RomM; deploy/test daemon on the RetroDECK Linux host.'
+overview: 'Build a Linux desktop stack (Electron GUI + systemd user daemon, shared Node/TypeScript core) that browses RomM, manages RetroDECK ROM downloads, and keeps saves/states auto-synced in the background. Develop and run on the Linux host with RetroDECK installed.'
 todos:
   - id: scaffold
     content: 'Scaffold monorepo: shared core, Electron GUI, sync daemon CLI, config + retrodeck.json detection'
@@ -27,10 +27,10 @@ todos:
     content: 'GUI Sync/Settings: enable auto-sync, interval, conflict policy, daemon status, Sync Now'
     status: pending
   - id: dev-env
-    content: 'Dev fixtures + config profiles + SSH deploy script for RetroDECK host; document Mac/LAN workflow'
+    content: 'Config + systemd install; document Linux/RetroDECK local workflow'
     status: pending
   - id: readme
-    content: 'README with setup, token scopes, systemd install, Mac vs Linux dev/deploy'
+    content: 'README with setup, token scopes, systemd install, Linux/RetroDECK workflow'
     status: pending
 isProject: false
 ---
@@ -55,48 +55,29 @@ Greenfield project (no existing repo). Working name: **RommDeck**.
 
 Everything stays in TypeScript/Node so you can review it. No Rust.
 
-## Dev environment (Mac + LAN)
+## Dev environment (Linux + RetroDECK)
 
-Your topology:
+Develop and run everything on the Linux host that has RetroDECK installed. RomM is a separate instance reachable on the network (or localhost).
 
-| Machine | Role |
+| Concern | Where |
 | --- | --- |
-| MacBook | Edit/build/run most of the app |
-| Linux host A | RomM server (LAN URL + API token) |
-| Linux host B | RetroDECK (real `retrodeck.json`, roms/saves/states) |
+| Edit / build / run GUI | Same Linux host |
+| Real `retrodeck.json` + Flatpak paths | Auto-detected |
+| Downloads into ROM folders | Real RetroDECK `roms_path` |
+| `systemd --user` daemon | Same host — validate end-to-end locally |
 
-**Default workflow (no SSHFS required):**
+**Default workflow:**
 
-1. **Mac day-to-day**
-   - Clone repo, `pnpm`/`npm` install, run Electron GUI locally.
-   - Config profile `dev` points `romm.baseUrl` at the LAN RomM instance (e.g. `http://192.168.x.x:8080`) and uses a Client API Token from that instance.
-   - RetroDECK paths are **not** auto-detected on Mac. Use a local fixture tree that mirrors RetroDECK layout, e.g. `~/rommdeck-dev/retrodeck/{roms,saves,states}/…`, plus a checked-in sample `fixtures/retrodeck.json` (`roms_path` / `saves_path` / `states_path` → that tree). Settings can override paths the same way as production.
-   - Download/delete/sync logic is exercised against the fixture dirs + real RomM API. No RetroDECK install needed on the Mac.
+1. Clone repo, `npm install`, build core, run Electron GUI.
+2. Point `romm.baseUrl` at your RomM instance and paste a Client API Token.
+3. Auto-detect RetroDECK from `~/.var/app/net.retrodeck.retrodeck/config/retrodeck/retrodeck.json` (override in Settings if needed).
+4. Install/enable the `systemd --user` unit for auto-sync on the same machine.
 
-2. **Integration on RetroDECK host (Linux B)**
-   - SSH from Mac; rsync/deploy script pushes built `packages/syncd` (and optionally GUI) to the box.
-   - On that host, auto-detect real `~/.var/app/net.retrodeck.retrodeck/config/retrodeck/retrodeck.json`.
-   - Install/enable `systemd --user` unit there — this is the only place auto-sync is validated end-to-end.
-   - GUI can also be run on Linux B when you need to test downloads into real ROM folders.
+Config lives in one place: `~/.config/rommdeck/config.json` (shared by GUI and daemon). Sync interval / debounce are set there or in Settings.
 
-3. **What stays Mac-only vs Linux-only**
+**Network** — RomM must be reachable from this host. Token scopes include roms/platforms read, assets read/write, devices read/write. If RomM is bound to localhost only on another machine, use an SSH tunnel (`ssh -L 8080:localhost:8080 romm-host`) or open LAN access.
 
-| Concern | Mac | RetroDECK Linux |
-| --- | --- | --- |
-| UI, RomM browse, download into fixture dirs | Yes | Optional |
-| Unit tests for core (map, index, negotiate mocks) | Yes | Yes |
-| Real `retrodeck.json` + Flatpak paths | No (fixture) | Yes |
-| `systemd --user` daemon | No | Yes |
-
-4. **Config profiles** — e.g. `config.dev.json` / env `ROMMDECK_PROFILE=dev|prod`:
-   - `dev`: LAN RomM URL, fixture paths, shorter sync interval for testing
-   - `prod` (on Linux B): real paths from `retrodeck.json`, normal interval
-
-5. **Network** — Mac and both Linux hosts on same LAN; RomM reachable from Mac and from host B. Token scopes include roms/platforms read, assets read/write, devices read/write. Document firewall if RomM is bound to localhost only on host A (must listen on LAN or use SSH tunnel: `ssh -L 8080:localhost:8080 hostA`).
-
-6. **Optional later** — SSHFS/NFS mount of host B’s `roms_path` on the Mac for “download straight to RetroDECK over the network” while developing; not required for v1.
-
-Dev tooling to ship with the repo: `fixtures/retrodeck.json`, `scripts/seed-dev-tree.sh`, `scripts/deploy-syncd.sh` (rsync + `systemctl --user restart`).
+Optional helpers still in the repo: `fixtures/retrodeck.json`, `scripts/seed-dev-tree.sh` (offline/fixture paths if you ever need them), `scripts/deploy-syncd.sh` (rsync install of the daemon binary/unit).
 
 ## Architecture
 
@@ -221,22 +202,22 @@ rommdeck/
   packages/gui/            # Electron + React
   packages/syncd/          # CLI daemon entrypoint
   packaging/systemd/       # rommdeck-syncd.service
-  fixtures/retrodeck.json  # Dev sample paths for Mac
+  fixtures/retrodeck.json  # Optional sample paths (non-RetroDECK fallback)
   scripts/seed-dev-tree.sh
-  scripts/deploy-syncd.sh  # rsync + restart on RetroDECK host
+  scripts/deploy-syncd.sh  # optional rsync install of daemon
   data/platform-map.json
   README.md
 ```
 
 ## Implementation order
 
-1. Monorepo scaffold + shared config profiles + `retrodeck.json` detection + Mac fixtures
-2. Shared RomM client + platform map (pointed at LAN RomM)
+1. Monorepo scaffold + shared config + `retrodeck.json` detection
+2. Shared RomM client + platform map
 3. Download manager + SQLite index + local delete + Library UI
 4. Sync core (negotiate/execute/complete) + manual Sync in GUI
 5. `rommdeck-syncd` + systemd user unit + watch/interval + status file
 6. GUI daemon controls + conflict policy settings
-7. Deploy script + README (Mac/LAN/Linux workflow, token scopes, systemd)
+7. README (Linux/RetroDECK workflow, token scopes, systemd)
 
 ## v1 non-goals
 

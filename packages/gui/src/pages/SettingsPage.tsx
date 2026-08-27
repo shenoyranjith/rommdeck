@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { getApi } from "../api";
 
 interface Config {
-  profile: "dev" | "prod";
   romm: { baseUrl: string; apiToken: string };
   retrodeck: {
     configPath: string;
@@ -93,8 +92,7 @@ export function SettingsPage() {
         <div>
           <h1>Settings</h1>
           <p>
-            Profile <span className="mono">{cfg.profile}</span> · shared with{" "}
-            <span className="mono">rommdeck-syncd</span>
+            Shared with <span className="mono">rommdeck-syncd</span>
           </p>
         </div>
         <div className="toolbar">

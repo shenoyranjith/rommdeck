@@ -1,5 +1,4 @@
 {
-  "profile": "dev",
   "romm": {
     "baseUrl": "http://192.168.1.10:8080",
     "apiToken": "rmm_REPLACE_ME"
@@ -13,11 +12,11 @@
   "sync": {
     "enabled": false,
     "mode": "push_pull",
-    "intervalSeconds": 60,
-    "debounceSeconds": 15,
+    "intervalSeconds": 300,
+    "debounceSeconds": 45,
     "conflictPolicy": "keep_both",
     "deviceId": null,
-    "deviceName": "RommDeck Dev"
+    "deviceName": "RommDeck"
   },
   "platformMapOverrides": {}
 }

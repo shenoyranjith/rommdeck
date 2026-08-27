@@ -8,9 +8,9 @@ Desktop bridge between **[RomM](https://github.com/rommapp/romm)** (library sour
 ## Requirements
 
 - Node.js 20+
-- A RomM **5.x** instance reachable on your LAN
+- Linux with RetroDECK installed
+- A RomM **5.x** instance reachable from this host
 - A Client API Token with scopes for platforms/roms read, assets read/write, and devices read/write
-- Linux host with RetroDECK for production paths + systemd (Mac uses fixture dirs)
 
 ## Monorepo layout
 
@@ -19,13 +19,15 @@ packages/core/      Shared TypeScript (RomM client, downloads, SQLite index, syn
 packages/gui/       Electron + React UI
 packages/syncd/     Background sync daemon CLI
 packaging/systemd/  rommdeck-syncd.service
-fixtures/           Sample retrodeck.json for Mac/dev
+fixtures/           Optional sample retrodeck.json (non-RetroDECK fallback)
 data/platform-map.json
 scripts/seed-dev-tree.sh
 scripts/deploy-syncd.sh
 ```
 
-## Mac / LAN development
+## Development (Linux + RetroDECK)
+
+Edit, build, and run on the same machine that has RetroDECK.
 
 1. Install dependencies:
 
@@ -35,25 +37,25 @@ npm run build:core
 # postinstall rebuilds better-sqlite3 for Electron's Node ABI
 ```
 
-Native module note: `better-sqlite3` must match the runtime. After `npm install`, `postinstall` rebuilds it for Electron. If the GUI shows a `NODE_MODULE_VERSION` error, run `npm run rebuild:electron`. For the Node-based sync daemon on this machine, run `npm run rebuild:node` first.
+Native module note: `better-sqlite3` must match the runtime. After `npm install`, `postinstall` rebuilds it for Electron. If the GUI shows a `NODE_MODULE_VERSION` error, run `npm run rebuild:electron`. For the Node-based sync daemon, run `npm run rebuild:node` first.
 
-2. Seed a fixture RetroDECK tree and `config.dev.json`:
+2. Configure RomM:
 
-```bash
-npm run seed:dev
-```
-
-Edit `~/.config/rommdeck/config.dev.json` — set `romm.baseUrl` to your LAN RomM (e.g. `http://192.168.x.x:8080`) and paste a Client API Token (`rmm_…`).
+Create or edit `~/.config/rommdeck/config.json` — set `romm.baseUrl` to your RomM instance and paste a Client API Token (`rmm_…`). See `fixtures/config.example.json` for a template.
 
 3. Run the GUI:
 
 ```bash
-ROMMDECK_PROFILE=dev npm run dev:gui
+npm run dev:gui
 ```
 
-Downloads and sync logic write under `~/rommdeck-dev/retrodeck/`. No RetroDECK install is required on the Mac.
+RetroDECK paths auto-detect from:
 
-If RomM only listens on localhost on host A:
+`~/.var/app/net.retrodeck.retrodeck/config/retrodeck/retrodeck.json`
+
+(`roms_path`, `saves_path`, `states_path`). Override in Settings if needed.
+
+If RomM only listens on localhost on another host:
 
 ```bash
 ssh -L 8080:localhost:8080 user@romm-host
@@ -70,23 +72,18 @@ Create a token in RomM → Administration → Client API Tokens. For full RommDe
 | Save/state I/O | `assets.read`, `assets.write` |
 | Device registration / sync | `devices.read`, `devices.write` |
 
-## Linux / RetroDECK host
+## Auto-sync daemon
 
-On the Steam Deck (or other Linux box with RetroDECK):
+On this host:
 
-1. Auto-detect uses:
-
-`~/.var/app/net.retrodeck.retrodeck/config/retrodeck/retrodeck.json`
-
-(`roms_path`, `saves_path`, `states_path`). Override in Settings if needed.
-
-2. Deploy the daemon from your Mac:
+1. Build and install the daemon (local install via deploy script, or point the unit at your build):
 
 ```bash
-REMOTE=deck@192.168.x.x npm run deploy:syncd
+npm run build:syncd
+# optional: REMOTE=user@host npm run deploy:syncd
 ```
 
-3. Enable at login:
+2. Enable at login:
 
 ```bash
 systemctl --user enable --now rommdeck-syncd.service
@@ -96,20 +93,17 @@ Logs: `journalctl --user -u rommdeck-syncd.service -f`
 Status file: `~/.local/share/rommdeck/daemon-status.json`  
 Config (shared with GUI): `~/.config/rommdeck/config.json`
 
-The GUI Sync page can toggle `systemctl --user enable/disable --now` on Linux.
+The GUI Sync page can toggle `systemctl --user enable/disable --now`.
 
 ### Gaming Mode note
 
 `systemd --user` services run while your user session is active. Sync is reliable in Desktop Mode and while logged in (same as other user services).
 
-## Config profiles
+## Config
 
-| Env | Behavior |
-| --- | --- |
-| `ROMMDECK_PROFILE=dev` | Loads `config.dev.json` sidecar; shorter default sync interval |
-| `ROMMDECK_PROFILE=prod` (default) | Production paths / interval |
+Single file: `~/.config/rommdeck/config.json` (shared by GUI and daemon).
 
-Optional overrides: `ROMMDECK_CONFIG_DIR`, `ROMMDECK_DATA_DIR`.
+Optional path overrides: `ROMMDECK_CONFIG_DIR`, `ROMMDECK_DATA_DIR`.
 
 ## Platform mapping
 
@@ -121,7 +115,7 @@ Bundled map (`data/platform-map.json`) inverts RomM’s [ES-DE example](https://
 
 | Script | Purpose |
 | --- | --- |
-| `npm run seed:dev` | Create fixture dirs + `config.dev.json` |
+| `npm run seed:dev` | Optional fixture dirs + starter `config.json` (if not using real RetroDECK paths) |
 | `npm run deploy:syncd` | Build core/syncd, rsync to `REMOTE`, restart user unit |
 | `npm run build` | Build core, syncd, and GUI |
 | `npm run typecheck` | Typecheck all packages |

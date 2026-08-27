@@ -1,10 +1,8 @@
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
-import { dirname } from "node:path";
 import { getConfigDir, getConfigPath } from "./paths.js";
 
 export type ConflictPolicy = "keep_both" | "server_wins" | "device_wins";
 export type SyncMode = "push_pull" | "pull_only" | "push_only";
-export type ProfileName = "dev" | "prod";
 
 export interface RommConfig {
   baseUrl: string;
@@ -31,7 +29,6 @@ export interface SyncConfig {
 }
 
 export interface RommDeckConfig {
-  profile: ProfileName;
   romm: RommConfig;
   retrodeck: RetroDeckConfig;
   sync: SyncConfig;
@@ -40,7 +37,6 @@ export interface RommDeckConfig {
 }
 
 export const DEFAULT_CONFIG: RommDeckConfig = {
-  profile: "prod",
   romm: {
     baseUrl: "",
     apiToken: "",
@@ -61,19 +57,6 @@ export const DEFAULT_CONFIG: RommDeckConfig = {
     deviceName: "RommDeck",
   },
   platformMapOverrides: {},
-};
-
-export const DEV_DEFAULTS: Partial<RommDeckConfig> = {
-  profile: "dev",
-  sync: {
-    enabled: false,
-    mode: "push_pull",
-    intervalSeconds: 60,
-    debounceSeconds: 15,
-    conflictPolicy: "keep_both",
-    deviceId: null,
-    deviceName: "RommDeck Dev",
-  },
 };
 
 function deepMerge<T>(base: T, over: Partial<T>): T {
@@ -101,19 +84,8 @@ function deepMerge<T>(base: T, over: Partial<T>): T {
   return out;
 }
 
-export function resolveProfile(): ProfileName {
-  const env = process.env.ROMMDECK_PROFILE;
-  if (env === "dev" || env === "prod") return env;
-  return "prod";
-}
-
 export function loadConfig(): RommDeckConfig {
-  const profile = resolveProfile();
-  let cfg: RommDeckConfig = {
-    ...DEFAULT_CONFIG,
-    ...(profile === "dev" ? deepMerge(DEFAULT_CONFIG, DEV_DEFAULTS as Partial<RommDeckConfig>) : {}),
-    profile,
-  };
+  let cfg: RommDeckConfig = { ...DEFAULT_CONFIG };
 
   const path = getConfigPath();
   if (existsSync(path)) {
@@ -121,14 +93,6 @@ export function loadConfig(): RommDeckConfig {
     cfg = deepMerge(cfg, raw);
   }
 
-  // Profile-specific sidecar: config.dev.json next to config.json
-  const profilePath = `${dirname(path)}/config.${profile}.json`;
-  if (existsSync(profilePath)) {
-    const raw = JSON.parse(readFileSync(profilePath, "utf8")) as Partial<RommDeckConfig>;
-    cfg = deepMerge(cfg, raw);
-  }
-
-  cfg.profile = profile;
   return cfg;
 }
 

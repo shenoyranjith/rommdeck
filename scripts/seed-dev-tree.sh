@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Seed a local RetroDECK-like tree for Mac / non-RetroDECK development.
+# Seed a local RetroDECK-like tree for non-RetroDECK / offline development.
 set -euo pipefail
 
 ROOT="${ROMMDECK_DEV_ROOT:-$HOME/rommdeck-dev/retrodeck}"
@@ -17,11 +17,10 @@ EXPANDED="$CFG_DIR/fixtures-retrodeck.json"
 mkdir -p "$CFG_DIR"
 sed "s|\${HOME}|$HOME|g" "$REPO_ROOT/fixtures/retrodeck.json" > "$EXPANDED"
 
-DEV_CFG="$CFG_DIR/config.dev.json"
-if [[ ! -f "$DEV_CFG" ]]; then
-  cat > "$DEV_CFG" <<EOF
+MAIN_CFG="$CFG_DIR/config.json"
+if [[ ! -f "$MAIN_CFG" ]]; then
+  cat > "$MAIN_CFG" <<EOF
 {
-  "profile": "dev",
   "romm": {
     "baseUrl": "http://192.168.1.10:8080",
     "apiToken": ""
@@ -35,26 +34,19 @@ if [[ ! -f "$DEV_CFG" ]]; then
   "sync": {
     "enabled": false,
     "mode": "push_pull",
-    "intervalSeconds": 60,
-    "debounceSeconds": 15,
+    "intervalSeconds": 300,
+    "debounceSeconds": 45,
     "conflictPolicy": "keep_both",
     "deviceId": null,
-    "deviceName": "RommDeck Dev"
+    "deviceName": "RommDeck"
   },
   "platformMapOverrides": {}
 }
 EOF
-  echo "Wrote $DEV_CFG — set romm.baseUrl and apiToken"
+  echo "Wrote $MAIN_CFG — set romm.baseUrl and apiToken"
 else
-  echo "Keeping existing $DEV_CFG"
-fi
-
-# Also write main config if missing
-MAIN_CFG="$CFG_DIR/config.json"
-if [[ ! -f "$MAIN_CFG" ]]; then
-  cp "$DEV_CFG" "$MAIN_CFG"
-  echo "Wrote $MAIN_CFG"
+  echo "Keeping existing $MAIN_CFG"
 fi
 
 echo "Dev tree ready at $ROOT"
-echo "Run with: ROMMDECK_PROFILE=dev npm run dev:gui"
+echo "Run with: npm run dev:gui"
