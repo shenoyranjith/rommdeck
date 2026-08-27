@@ -73,6 +73,25 @@ export function IconCheck(props: IconProps) {
   );
 }
 
+export function IconSelect(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <rect x="3" y="3" width="7" height="7" rx="1" />
+      <rect x="14" y="3" width="7" height="7" rx="1" />
+      <rect x="3" y="14" width="7" height="7" rx="1" />
+      <path d="m15.5 16.5 1.5 1.5 3-3" />
+    </svg>
+  );
+}
+
+export function IconClose(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M18 6 6 18M6 6l12 12" />
+    </svg>
+  );
+}
+
 export function IconWarn(props: IconProps) {
   return (
     <svg {...base(props)}>

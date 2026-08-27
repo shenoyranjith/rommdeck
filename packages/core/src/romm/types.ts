@@ -26,9 +26,15 @@ export interface RommRom {
   slug?: string;
   fs_name?: string;
   fs_name_no_tags?: string;
+  fs_name_no_ext?: string;
+  fs_extension?: string;
+  fs_path?: string;
+  fs_size_bytes?: number;
   platform_id?: number;
   platform_slug?: string;
   platform_name?: string;
+  platform_display_name?: string;
+  summary?: string | null;
   path_cover_small?: string | null;
   path_cover_large?: string | null;
   url_cover?: string | null;

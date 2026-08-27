@@ -14,6 +14,7 @@ export interface RommDeckApi {
     limit?: number;
     offset?: number;
   }) => Promise<{ items: unknown[]; total: number }>;
+  getRom: (romId: number) => Promise<unknown>;
   getRetroDeckPaths: () => Promise<unknown>;
   mapFolder: (slug: string) => Promise<string>;
   enqueueDownload: (romId: number, platformSlug: string) => Promise<unknown>;
@@ -41,6 +42,7 @@ const api: RommDeckApi = {
   testConnection: () => ipcRenderer.invoke("romm:test"),
   getPlatforms: () => ipcRenderer.invoke("romm:platforms"),
   getRoms: (opts) => ipcRenderer.invoke("romm:roms", opts),
+  getRom: (romId) => ipcRenderer.invoke("romm:rom", romId),
   getRetroDeckPaths: () => ipcRenderer.invoke("paths:retrodeck"),
   mapFolder: (slug) => ipcRenderer.invoke("platform:mapFolder", slug),
   enqueueDownload: (romId, platformSlug) =>

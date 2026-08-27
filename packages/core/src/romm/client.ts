@@ -140,7 +140,14 @@ export class RommClient {
     return `${this.baseUrl}${path}`;
   }
 
-  coverUrlFor(rom: RommRom): string | null {
+  coverUrlFor(rom: RommRom, prefer: "small" | "large" = "small"): string | null {
+    if (prefer === "large") {
+      return (
+        this.resolveAssetUrl(rom.path_cover_large) ??
+        this.resolveAssetUrl(rom.path_cover_small) ??
+        (rom.url_cover && /^https?:\/\//i.test(rom.url_cover) ? rom.url_cover : null)
+      );
+    }
     return (
       this.resolveAssetUrl(rom.path_cover_small) ??
       this.resolveAssetUrl(rom.path_cover_large) ??

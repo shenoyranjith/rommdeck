@@ -134,6 +134,7 @@ function registerIpc(): void {
   ipcMain.removeHandler("romm:test");
   ipcMain.removeHandler("romm:platforms");
   ipcMain.removeHandler("romm:roms");
+  ipcMain.removeHandler("romm:rom");
   ipcMain.removeHandler("paths:retrodeck");
   ipcMain.removeHandler("platform:mapFolder");
   ipcMain.removeHandler("downloads:enqueue");
@@ -210,6 +211,24 @@ function registerIpc(): void {
       return { ...result, items };
     },
   );
+
+  ipcMain.handle("romm:rom", async (_e, romId: number) => {
+    const cfg = loadConfig();
+    const client = createRommClient(cfg.romm.baseUrl, cfg.romm.apiToken);
+    const paths = resolveRetroDeckPaths(cfg.retrodeck);
+    const rom = await client.getRom(romId);
+    const index = getIndex();
+    const slug = rom.platform_slug ?? "";
+    const downloaded = slug
+      ? isRomDownloaded(rom, index, paths.romsPath, slug, cfg.platformMapOverrides)
+      : index.getByRomId(rom.id).length > 0;
+    return {
+      ...rom,
+      downloaded,
+      coverUrl: client.coverUrlFor(rom, "large"),
+      coverUrlSmall: client.coverUrlFor(rom, "small"),
+    };
+  });
 
   ipcMain.handle("paths:retrodeck", () => {
     const cfg = loadConfig();
