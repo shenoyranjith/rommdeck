@@ -2,7 +2,7 @@ import { createWriteStream } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import { pipeline } from "node:stream/promises";
-import { Readable } from "node:stream";
+import { Readable, Transform } from "node:stream";
 import type {
   CompleteSessionBody,
   NegotiateResponse,
@@ -174,11 +174,12 @@ export class RommClient {
     romId: number,
     fileName: string,
     destPath: string,
-    onProgress?: (bytes: number) => void,
+    opts?: { onProgress?: (bytes: number) => void; signal?: AbortSignal },
   ): Promise<void> {
     const encoded = encodeURIComponent(fileName);
     const res = await fetch(this.url(`/api/roms/${romId}/content/${encoded}`), {
       headers: this.headers(),
+      signal: opts?.signal,
     });
     if (!res.ok) {
       const text = await res.text().catch(() => "");
@@ -189,11 +190,14 @@ export class RommClient {
 
     const nodeStream = Readable.fromWeb(res.body as import("stream/web").ReadableStream);
     let received = 0;
-    nodeStream.on("data", (chunk: Buffer) => {
-      received += chunk.length;
-      onProgress?.(received);
+    const progressTap = new Transform({
+      transform(chunk: Buffer, _enc, cb) {
+        received += chunk.length;
+        opts?.onProgress?.(received);
+        cb(null, chunk);
+      },
     });
-    await pipeline(nodeStream, createWriteStream(destPath));
+    await pipeline(nodeStream, progressTap, createWriteStream(destPath));
   }
 
   async registerDevice(body: {

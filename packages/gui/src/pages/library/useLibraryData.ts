@@ -8,13 +8,16 @@ import {
   getDownloadedRoms,
   invalidateDownloaded,
   markCatalogRomDownloaded,
+  onInventoryChange,
   setCatalog,
   setDownloadedIds as cacheDownloadedIds,
   setDownloadedRoms as cacheDownloadedRoms,
 } from "./romCache";
 import type { Platform, RomItem, StatusFilter } from "./types";
+import { useActiveDownloads } from "../../hooks/useActiveDownloads";
 
 export function useLibraryData() {
+  const activeDownloads = useActiveDownloads();
   const [platforms, setPlatforms] = useState<Platform[]>([]);
   const [selected, setSelected] = useState<Platform | null>(null);
   const [roms, setRoms] = useState<RomItem[]>([]);
@@ -201,6 +204,54 @@ export function useLibraryData() {
       cancelled = true;
     };
   }, [selected?.slug]);
+
+  useEffect(() => {
+    return onInventoryChange((event) => {
+      if (selected?.slug === event.rommSlug) {
+        setDownloadedIds((prev) => {
+          const next = new Set(prev);
+          if (event.downloaded) next.add(event.romId);
+          else next.delete(event.romId);
+          return next;
+        });
+      }
+
+      setRoms((prev) => {
+        if (!prev.some((r) => r.id === event.romId)) return prev;
+        const next = prev.map((r) =>
+          r.id === event.romId
+            ? {
+                ...r,
+                downloaded: event.downloaded,
+                verified: event.downloaded ? event.verified : undefined,
+              }
+            : r,
+        );
+        if (selected) {
+          setCatalog(
+            catalogCacheKey(selected.id, search),
+            next,
+            totalRef.current,
+          );
+        }
+        return next;
+      });
+
+      setDownloadedRoms((prev) => {
+        if (event.downloaded) return prev;
+        return prev.filter((r) => r.id !== event.romId);
+      });
+
+      setDetail((prev) => {
+        if (prev?.id !== event.romId) return prev;
+        return {
+          ...prev,
+          downloaded: event.downloaded,
+          verified: event.downloaded ? event.verified : undefined,
+        };
+      });
+    });
+  }, [selected?.id, selected?.slug, search]);
 
   useEffect(() => {
     if (filter !== "downloaded" || !selected?.slug) {
@@ -540,10 +591,12 @@ export function useLibraryData() {
     async (rom: RomItem) => {
       const slug = rom.platform_slug ?? selected?.slug;
       if (!slug) return;
+      const queueStatus = activeDownloads.get(rom.id);
+      if (queueStatus) return;
       await getApi().enqueueDownload(rom.id, slug);
       setMessage(`Queued ${rom.name}`);
     },
-    [selected?.slug],
+    [selected?.slug, activeDownloads],
   );
 
   const deleteLocal = useCallback(
@@ -743,6 +796,7 @@ export function useLibraryData() {
           catalogTotal = page.total;
           for (const rom of page.items) {
             if (rom.downloaded || downloadedIds.has(rom.id)) continue;
+            if (activeDownloads.has(rom.id)) continue;
             items.push({
               romId: rom.id,
               platformSlug: rom.platform_slug ?? selected.slug,
@@ -766,7 +820,10 @@ export function useLibraryData() {
     }
 
     const items = visible
-      .filter((r) => selectedIds.has(r.id) && !r.downloaded)
+      .filter(
+        (r) =>
+          selectedIds.has(r.id) && !r.downloaded && !activeDownloads.has(r.id),
+      )
       .map((r) => ({
         romId: r.id,
         platformSlug: r.platform_slug ?? selected.slug,
@@ -782,6 +839,7 @@ export function useLibraryData() {
     downloadedIds,
     visible,
     selectedIds,
+    activeDownloads,
   ]);
 
   const downloadPlatform = useCallback(async () => {
@@ -850,5 +908,6 @@ export function useLibraryData() {
     deleteSelected,
     downloadSelected,
     downloadPlatform,
+    activeDownloads,
   };
 }

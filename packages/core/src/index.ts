@@ -1,3 +1,4 @@
+export * from "./log.js";
 export * from "./paths.js";
 export * from "./config.js";
 export * from "./retrodeck.js";
@@ -7,5 +8,6 @@ export * from "./romm/types.js";
 export * from "./romm/client.js";
 export * from "./db/index.js";
 export * from "./download/manager.js";
+export * from "./esde/metadata.js";
 export * from "./sync/protocol.js";
 export * from "./daemon-status.js";

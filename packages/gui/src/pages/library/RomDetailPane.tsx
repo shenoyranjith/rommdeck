@@ -2,6 +2,11 @@ import { cn } from "../../lib/cn";
 import { IconClose } from "../../components/icons";
 import { formatBytes } from "./format";
 import type { Platform, RomItem } from "./types";
+import { romDetailStatusClass, romStatusLabel } from "./romStatus";
+import {
+  activeDownloadLabel,
+  type ActiveDownloadStatus,
+} from "../../hooks/useActiveDownloads";
 
 export function RomDetailPane({
   detail,
@@ -10,6 +15,7 @@ export function RomDetailPane({
   onClose,
   onDownload,
   onDeleteLocal,
+  queueStatus,
 }: {
   detail: RomItem | null;
   detailError: string | null;
@@ -17,6 +23,7 @@ export function RomDetailPane({
   onClose: () => void;
   onDownload: (rom: RomItem) => void;
   onDeleteLocal: (rom: RomItem) => void;
+  queueStatus?: ActiveDownloadStatus;
 }) {
   const detailSize =
     detail?.fs_size_bytes ??
@@ -84,12 +91,10 @@ export function RomDetailPane({
             <span
               className={cn(
                 "inline-flex w-fit items-center px-1.5 py-0.5 text-[10px] font-semibold tracking-wide uppercase",
-                detail.downloaded
-                  ? "bg-ok/15 text-ok"
-                  : "border border-warn/50 text-warn",
+                romDetailStatusClass(detail),
               )}
             >
-              {detail.downloaded ? "Downloaded" : "Missing"}
+              {romStatusLabel(detail)}
             </span>
 
             {detailError && (
@@ -133,7 +138,23 @@ export function RomDetailPane({
             </dl>
 
             <div className="mt-1 flex flex-col gap-2">
-              {!detail.downloaded ? (
+              {detail.downloaded ? (
+                <button
+                  type="button"
+                  className="cursor-pointer border border-danger/50 px-3 py-2 text-sm text-danger"
+                  onClick={() => onDeleteLocal(detail)}
+                >
+                  Delete local
+                </button>
+              ) : queueStatus ? (
+                <button
+                  type="button"
+                  disabled
+                  className="cursor-not-allowed border border-accent/50 bg-bg2 px-3 py-2 text-sm font-semibold text-accent/70"
+                >
+                  {activeDownloadLabel(queueStatus)}
+                </button>
+              ) : (
                 <button
                   type="button"
                   className="cursor-pointer border border-accent bg-accent px-3 py-2 text-sm font-semibold text-accent-fg"
@@ -141,14 +162,6 @@ export function RomDetailPane({
                   onClick={() => onDownload(detail)}
                 >
                   Download
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="cursor-pointer border border-danger/50 px-3 py-2 text-sm text-danger"
-                  onClick={() => onDeleteLocal(detail)}
-                >
-                  Delete local
                 </button>
               )}
             </div>

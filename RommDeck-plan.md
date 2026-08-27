@@ -288,9 +288,12 @@ Visual lock: `docs/mockups/downloads-vector-*.png`. Match Library page chrome (`
 
 ### Queue behavior
 
+Job lifecycle: **queued** → **downloading** → **metadata** (ES-DE gamelist + artwork) → **done** | **error** | **cancelled**
+
 | State | Behavior |
 | --- | --- |
-| Success | Auto-clear from page; write ROM + ES-DE metadata |
+| Metadata | Visible in ACTIVE section while writing ES-DE metadata from RomM; cancellable |
+| Success | Auto-clear from page after metadata completes |
 | Failed | Retain until retry or dismiss |
 | Cancelled | Discard immediately |
 | App exit (active jobs) | Electron dialog: Stay / Quit anyway; queue persisted to `~/.local/share/rommdeck/download-queue.json` |

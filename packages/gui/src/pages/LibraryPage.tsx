@@ -111,6 +111,9 @@ export function LibraryPage() {
             onClose={lib.closeDetail}
             onDownload={(rom) => void lib.downloadOne(rom)}
             onDeleteLocal={(rom) => void lib.deleteLocal(rom)}
+            queueStatus={
+              lib.detail ? lib.activeDownloads.get(lib.detail.id) : undefined
+            }
           />
         )}
       </div>

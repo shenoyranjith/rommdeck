@@ -32,6 +32,15 @@ export const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    id: 2,
+    name: "002_rom_files_verified",
+    up(db) {
+      db.exec(`
+        ALTER TABLE rom_files ADD COLUMN verified INTEGER NOT NULL DEFAULT 1;
+      `);
+    },
+  },
 ];
 
 function ensureMigrationsTable(db: Database.Database): void {

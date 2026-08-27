@@ -5,10 +5,18 @@ export interface CatalogCacheEntry {
   total: number;
 }
 
+export interface InventoryChangeEvent {
+  romId: number;
+  rommSlug: string;
+  downloaded: boolean;
+  verified?: boolean;
+}
+
 /** In-memory Library caches for the GUI session (per platform / search). */
 const catalogByKey = new Map<string, CatalogCacheEntry>();
 const downloadedRomsBySlug = new Map<string, RomItem[]>();
 const downloadedIdsBySlug = new Map<string, number[]>();
+const inventoryListeners = new Set<(event: InventoryChangeEvent) => void>();
 
 export function catalogCacheKey(
   platformId: number | undefined | null,
@@ -48,7 +56,53 @@ export function setDownloadedIds(slug: string, ids: number[]): void {
 /** Drop downloaded caches after local delete / index changes. */
 export function invalidateDownloaded(slug: string): void {
   downloadedRomsBySlug.delete(slug);
-  downloadedIdsBySlug.delete(slug);
+}
+
+export function onInventoryChange(
+  listener: (event: InventoryChangeEvent) => void,
+): () => void {
+  inventoryListeners.add(listener);
+  return () => inventoryListeners.delete(listener);
+}
+
+/** Keep catalog badges in sync when a local copy is added or removed. */
+export function markCatalogRomDownloadedById(
+  romId: number,
+  downloaded: boolean,
+  verified?: boolean,
+): void {
+  for (const [key, entry] of catalogByKey) {
+    let changed = false;
+    const items = entry.items.map((r) => {
+      if (r.id !== romId) return r;
+      if (r.downloaded === downloaded && r.verified === verified) return r;
+      changed = true;
+      return {
+        ...r,
+        downloaded,
+        verified: downloaded ? verified : undefined,
+      };
+    });
+    if (changed) catalogByKey.set(key, { ...entry, items });
+  }
+}
+
+export function applyInventoryChange(event: InventoryChangeEvent): void {
+  const ids = getDownloadedIds(event.rommSlug) ?? [];
+  if (event.downloaded) {
+    if (!ids.includes(event.romId)) {
+      downloadedIdsBySlug.set(event.rommSlug, [...ids, event.romId]);
+    }
+    invalidateDownloaded(event.rommSlug);
+  } else {
+    downloadedIdsBySlug.set(
+      event.rommSlug,
+      ids.filter((id) => id !== event.romId),
+    );
+    invalidateDownloaded(event.rommSlug);
+  }
+  markCatalogRomDownloadedById(event.romId, event.downloaded, event.verified);
+  for (const listener of inventoryListeners) listener(event);
 }
 
 /** Keep catalog badges in sync when a local copy is removed. */
@@ -57,7 +111,10 @@ export function markCatalogRomDownloaded(
   romId: number,
   downloaded: boolean,
 ): void {
-  if (platformId == null) return;
+  if (platformId == null) {
+    markCatalogRomDownloadedById(romId, downloaded);
+    return;
+  }
   const prefix = `${platformId}:`;
   for (const [key, entry] of catalogByKey) {
     if (!key.startsWith(prefix)) continue;

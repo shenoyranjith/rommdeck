@@ -30,6 +30,8 @@ export interface RommRom {
   fs_extension?: string;
   fs_path?: string;
   fs_size_bytes?: number;
+  sha1_hash?: string | null;
+  md5_hash?: string | null;
   platform_id?: number;
   platform_slug?: string;
   platform_name?: string;

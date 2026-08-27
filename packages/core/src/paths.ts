@@ -25,6 +25,10 @@ export function getLogsDir(): string {
   return join(getDataDir(), "logs");
 }
 
+export function getAppLogPath(): string {
+  return join(getLogsDir(), "rommdeck.log");
+}
+
 export function getDefaultRetroDeckJsonPath(): string {
   return join(
     homedir(),

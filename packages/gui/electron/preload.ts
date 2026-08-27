@@ -23,10 +23,15 @@ export interface RommDeckApi {
     platformId: number,
     platformSlug: string,
   ) => Promise<{ queued: number; skipped: number; total: number }>;
-  listDownloads: () => Promise<unknown[]>;
+  listDownloads: () => Promise<{ active: unknown[]; failed: unknown[] }>;
   cancelDownload: (jobId: string) => Promise<void>;
+  cancelAllDownloads: () => Promise<void>;
+  retryDownload: (jobId: string) => Promise<unknown>;
+  dismissFailedDownload: (jobId: string) => Promise<void>;
+  clearFailedDownloads: () => Promise<void>;
   onDownloadJob: (cb: (job: unknown) => void) => () => void;
   onDownloadQueue: (cb: (jobs: unknown[]) => void) => () => void;
+  onDownloadFailed: (cb: (jobs: unknown[]) => void) => () => void;
   deleteLocal: (romId: number) => Promise<unknown>;
   downloadedIds: (platformSlug?: string) => Promise<number[]>;
   getDownloadedRoms: (platformSlug: string) => Promise<unknown[]>;
@@ -61,6 +66,10 @@ const api: RommDeckApi = {
     ipcRenderer.invoke("downloads:enqueuePlatform", platformId, platformSlug),
   listDownloads: () => ipcRenderer.invoke("downloads:list"),
   cancelDownload: (jobId) => ipcRenderer.invoke("downloads:cancel", jobId),
+  cancelAllDownloads: () => ipcRenderer.invoke("downloads:cancelAll"),
+  retryDownload: (jobId) => ipcRenderer.invoke("downloads:retry", jobId),
+  dismissFailedDownload: (jobId) => ipcRenderer.invoke("downloads:dismissFailed", jobId),
+  clearFailedDownloads: () => ipcRenderer.invoke("downloads:clearFailed"),
   onDownloadJob: (cb) => {
     const handler = (_: unknown, job: unknown) => cb(job);
     ipcRenderer.on("downloads:job", handler);
@@ -70,6 +79,11 @@ const api: RommDeckApi = {
     const handler = (_: unknown, jobs: unknown[]) => cb(jobs);
     ipcRenderer.on("downloads:queue", handler);
     return () => ipcRenderer.removeListener("downloads:queue", handler);
+  },
+  onDownloadFailed: (cb) => {
+    const handler = (_: unknown, jobs: unknown[]) => cb(jobs);
+    ipcRenderer.on("downloads:failed", handler);
+    return () => ipcRenderer.removeListener("downloads:failed", handler);
   },
   deleteLocal: (romId) => ipcRenderer.invoke("library:deleteLocal", romId),
   downloadedIds: (platformSlug) => ipcRenderer.invoke("library:downloadedIds", platformSlug),

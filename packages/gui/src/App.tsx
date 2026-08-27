@@ -16,6 +16,7 @@ import {
 import { cn } from "./lib/cn";
 import { getApi } from "./api";
 import { applyUiTheme, isUiTheme, DEFAULT_UI_THEME } from "./theme";
+import { useDownloadInventorySync } from "./hooks/useDownloadInventorySync";
 
 const NAV = [
   { to: "/", end: true, label: "Library", Icon: IconLibrary },
@@ -26,6 +27,7 @@ const NAV = [
 
 export function App() {
   const [appVersion, setAppVersion] = useState<string | null>(null);
+  useDownloadInventorySync();
 
   useEffect(() => {
     void (async () => {

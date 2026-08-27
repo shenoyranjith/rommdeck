@@ -11,6 +11,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { cn } from "../../lib/cn";
 import { IconCheck, IconWarn } from "../../components/icons";
 import type { RomItem } from "./types";
+import { romStatusClass, romStatusLabel } from "./romStatus";
 
 const MIN_CARD_WIDTH = 150;
 const GAP = 12;
@@ -99,17 +100,15 @@ const RomCard = memo(function RomCard({
         <span
           className={cn(
             "inline-flex h-8 w-full items-center justify-center gap-1.5 border text-[10px] font-semibold tracking-wide uppercase",
-            rom.downloaded
-              ? "border-accent/70 text-accent"
-              : "border-warn/60 text-warn",
+            romStatusClass(rom),
           )}
         >
-          {rom.downloaded ? (
+          {rom.downloaded && rom.verified !== false ? (
             <IconCheck className="size-3.5" />
           ) : (
             <IconWarn className="size-3.5" />
           )}
-          {rom.downloaded ? "Downloaded" : "Missing"}
+          {romStatusLabel(rom)}
         </span>
       </div>
     </article>

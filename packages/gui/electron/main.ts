@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, session } from "electron";
+import { app, BrowserWindow, ipcMain, shell, session, dialog } from "electron";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -13,6 +13,7 @@ import {
   resolveRetroDeckPaths,
   DownloadManager,
   deleteLocalRom,
+  getRomLocalStatus,
   isRomDownloaded,
   readDaemonStatus,
   ensureDevice,
@@ -20,6 +21,8 @@ import {
   rommSlugToEsdeFolder,
   type RommDeckConfig,
   type RommRom,
+  log,
+  getAppLogPath,
 } from "@rommdeck/core";
 
 const execFileAsync = promisify(execFile);
@@ -28,10 +31,69 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 let mainWindow: BrowserWindow | null = null;
 let downloadManager: DownloadManager | null = null;
 let libraryIndex: LibraryIndex | null = null;
+let quitting = false;
+
+function activeDownloadCount(): number {
+  return downloadManager?.getActiveCount() ?? 0;
+}
+
+async function confirmQuit(win: BrowserWindow | null): Promise<boolean> {
+  const n = activeDownloadCount();
+  if (n === 0) return true;
+  const target = win && !win.isDestroyed() ? win : BrowserWindow.getFocusedWindow();
+  const opts = {
+    type: "warning" as const,
+    title: "Active downloads",
+    message: `You still have ${n} download(s) in progress.`,
+    detail: "Quit anyway? Incomplete downloads may need to be retried.",
+    buttons: ["Stay", "Quit anyway"],
+    defaultId: 0,
+    cancelId: 0,
+  };
+  const { response } =
+    target && !target.isDestroyed()
+      ? await dialog.showMessageBox(target, opts)
+      : await dialog.showMessageBox(opts);
+  return response === 1;
+}
+
+function attachWindowCloseGuard(win: BrowserWindow): void {
+  win.on("close", (e) => {
+    if (quitting) return;
+    if (activeDownloadCount() === 0) return;
+    e.preventDefault();
+    void confirmQuit(win).then((ok) => {
+      if (ok) {
+        quitting = true;
+        win.close();
+      }
+    });
+  });
+}
 
 function getIndex(): LibraryIndex {
   if (!libraryIndex) libraryIndex = new LibraryIndex();
   return libraryIndex;
+}
+
+function romLocalFlags(
+  rom: RommRom,
+  index: LibraryIndex,
+  romsPath: string,
+  slug: string,
+  overrides: Record<string, string>,
+): { downloaded: boolean; verified?: boolean } {
+  if (!slug) {
+    const rows = index.getByRomId(rom.id);
+    if (rows.length === 0) return { downloaded: false };
+    return {
+      downloaded: true,
+      verified: rows.every((r) => r.verified),
+    };
+  }
+  const status = getRomLocalStatus(rom, index, romsPath, slug, overrides);
+  if (status === "missing") return { downloaded: false };
+  return { downloaded: true, verified: status === "verified" };
 }
 
 function getDownloadManager(): DownloadManager {
@@ -43,13 +105,22 @@ function getDownloadManager(): DownloadManager {
       client,
       index: getIndex(),
       romsPath: paths.romsPath,
+      rdHomePath: paths.rdHomePath,
       platformMapOverrides: cfg.platformMapOverrides,
+    });
+    log.download("DownloadManager initialized", {
+      romsPath: paths.romsPath,
+      rdHomePath: paths.rdHomePath,
+      rdHomeSource: paths.source,
     });
     downloadManager.on("job", (job) => {
       mainWindow?.webContents.send("downloads:job", job);
     });
     downloadManager.on("queue", (jobs) => {
       mainWindow?.webContents.send("downloads:queue", jobs);
+    });
+    downloadManager.on("failed", (jobs) => {
+      mainWindow?.webContents.send("downloads:failed", jobs);
     });
   }
   return downloadManager;
@@ -83,7 +154,7 @@ function createWindow(): void {
   }
 
   const preload = resolvePreloadPath();
-  console.log(`[rommdeck] preload: ${preload}`);
+  log.app("window creating", { preload });
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 720,
@@ -115,12 +186,17 @@ function createWindow(): void {
   mainWindow.on("unmaximize", emitMaximized);
 
   mainWindow.webContents.on("preload-error", (_event, preloadPath, error) => {
-    console.error(`[rommdeck] preload failed (${preloadPath}):`, error);
+    log.error("app", "preload failed", {
+      preloadPath,
+      error: error instanceof Error ? error.message : String(error),
+    });
   });
 
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
+
+  attachWindowCloseGuard(mainWindow);
 
   if (process.env.VITE_DEV_SERVER_URL) {
     void mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
@@ -156,6 +232,10 @@ function registerIpc(): void {
   ipcMain.removeHandler("downloads:enqueuePlatform");
   ipcMain.removeHandler("downloads:list");
   ipcMain.removeHandler("downloads:cancel");
+  ipcMain.removeHandler("downloads:cancelAll");
+  ipcMain.removeHandler("downloads:retry");
+  ipcMain.removeHandler("downloads:dismissFailed");
+  ipcMain.removeHandler("downloads:clearFailed");
   ipcMain.removeHandler("library:deleteLocal");
   ipcMain.removeHandler("library:downloadedIds");
   ipcMain.removeHandler("library:downloadedRoms");
@@ -247,12 +327,16 @@ function registerIpc(): void {
       const index = getIndex();
       const items = result.items.map((rom: RommRom) => {
         const slug = rom.platform_slug ?? opts.platformSlug ?? "";
-        const downloaded = slug
-          ? isRomDownloaded(rom, index, paths.romsPath, slug, cfg.platformMapOverrides)
-          : index.getByRomId(rom.id).length > 0;
+        const local = romLocalFlags(
+          rom,
+          index,
+          paths.romsPath,
+          slug,
+          cfg.platformMapOverrides,
+        );
         return {
           ...rom,
-          downloaded,
+          ...local,
           coverUrl: client.coverUrlFor(rom),
         };
       });
@@ -267,12 +351,16 @@ function registerIpc(): void {
     const rom = await client.getRom(romId);
     const index = getIndex();
     const slug = rom.platform_slug ?? "";
-    const downloaded = slug
-      ? isRomDownloaded(rom, index, paths.romsPath, slug, cfg.platformMapOverrides)
-      : index.getByRomId(rom.id).length > 0;
+    const local = romLocalFlags(
+      rom,
+      index,
+      paths.romsPath,
+      slug,
+      cfg.platformMapOverrides,
+    );
     return {
       ...rom,
-      downloaded,
+      ...local,
       coverUrl: client.coverUrlFor(rom, "large"),
       coverUrlSmall: client.coverUrlFor(rom, "small"),
     };
@@ -337,6 +425,10 @@ function registerIpc(): void {
             skipped++;
             continue;
           }
+          if (dm.isRomInQueue(rom.id)) {
+            skipped++;
+            continue;
+          }
           dm.enqueue(rom, slug);
           queued++;
         }
@@ -348,9 +440,21 @@ function registerIpc(): void {
     },
   );
 
-  ipcMain.handle("downloads:list", () => getDownloadManager().getJobs());
+  ipcMain.handle("downloads:list", () => getDownloadManager().getQueueState());
   ipcMain.handle("downloads:cancel", (_e, jobId: string) => {
     getDownloadManager().cancel(jobId);
+  });
+  ipcMain.handle("downloads:cancelAll", () => {
+    getDownloadManager().cancelAll();
+  });
+  ipcMain.handle("downloads:retry", async (_e, jobId: string) => {
+    return getDownloadManager().retry(jobId);
+  });
+  ipcMain.handle("downloads:dismissFailed", (_e, jobId: string) => {
+    getDownloadManager().dismissFailed(jobId);
+  });
+  ipcMain.handle("downloads:clearFailed", () => {
+    getDownloadManager().clearFailed();
   });
 
   ipcMain.handle("library:deleteLocal", (_e, romId: number) => {
@@ -366,6 +470,7 @@ function registerIpc(): void {
   ipcMain.handle("library:downloadedRoms", async (_e, platformSlug: string) => {
     const cfg = loadConfig();
     const client = createRommClient(cfg.romm.baseUrl, cfg.romm.apiToken);
+    const paths = resolveRetroDeckPaths(cfg.retrodeck);
     const ids = getIndex().getDownloadedRomIdsForSlug(platformSlug);
     if (ids.length === 0) return [];
 
@@ -379,9 +484,16 @@ function registerIpc(): void {
         const romId = ids[idx]!;
         try {
           const rom = await client.getRom(romId);
+          const local = romLocalFlags(
+            rom,
+            getIndex(),
+            paths.romsPath,
+            platformSlug,
+            cfg.platformMapOverrides,
+          );
           results[idx] = {
             ...rom,
-            downloaded: true,
+            ...local,
             coverUrl: client.coverUrlFor(rom),
             coverUrlSmall: client.coverUrlFor(rom, "small"),
           };
@@ -473,9 +585,21 @@ function installRommAssetAuth(): void {
 }
 
 app.whenReady().then(() => {
+  log.app("started", { version: app.getVersion(), logFile: getAppLogPath() });
   installRommAssetAuth();
   registerIpc();
   createWindow();
+  app.on("before-quit", (e) => {
+    if (quitting) return;
+    if (activeDownloadCount() === 0) return;
+    e.preventDefault();
+    void confirmQuit(mainWindow).then((ok) => {
+      if (ok) {
+        quitting = true;
+        app.quit();
+      }
+    });
+  });
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });

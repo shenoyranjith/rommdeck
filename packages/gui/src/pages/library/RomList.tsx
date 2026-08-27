@@ -3,6 +3,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { cn } from "../../lib/cn";
 import { IconCheck, IconWarn } from "../../components/icons";
 import type { RomItem } from "./types";
+import { romStatusClass, romStatusLabel } from "./romStatus";
 
 const ROW_HEIGHT = 72;
 
@@ -81,17 +82,15 @@ const RomListRow = memo(function RomListRow({
       <span
         className={cn(
           "inline-flex h-8 shrink-0 items-center gap-1.5 border px-3 text-[10px] font-semibold tracking-wide uppercase",
-          rom.downloaded
-            ? "border-accent/70 text-accent"
-            : "border-warn/60 text-warn",
+          romStatusClass(rom),
         )}
       >
-        {rom.downloaded ? (
+        {rom.downloaded && rom.verified !== false ? (
           <IconCheck className="size-3.5" />
         ) : (
           <IconWarn className="size-3.5" />
         )}
-        {rom.downloaded ? "Downloaded" : "Missing"}
+        {romStatusLabel(rom)}
       </span>
     </div>
   );

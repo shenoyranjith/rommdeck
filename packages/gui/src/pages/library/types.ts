@@ -24,6 +24,8 @@ export interface RomItem {
   coverUrl?: string | null;
   coverUrlSmall?: string | null;
   downloaded?: boolean;
+  /** False when downloaded but RomM provided no hash to verify against. */
+  verified?: boolean;
 }
 
 export type StatusFilter = "all" | "downloaded" | "missing";

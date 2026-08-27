@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { getLibraryDbPath } from "../paths.js";
 import { currentSchemaVersion, runMigrations } from "./migrations.js";
+import { log } from "../log.js";
 
 export interface IndexedRomFile {
   id?: number;
@@ -14,6 +15,7 @@ export interface IndexedRomFile {
   sha1: string | null;
   path: string;
   downloaded_at: string;
+  verified: boolean;
 }
 
 export class LibraryIndex {
@@ -24,6 +26,17 @@ export class LibraryIndex {
     this.db = new Database(dbPath);
     this.db.pragma("journal_mode = WAL");
     runMigrations(this.db);
+    log.index("opened library db", {
+      path: dbPath,
+      schemaVersion: currentSchemaVersion(this.db),
+    });
+  }
+
+  private mapRow(row: IndexedRomFile & { verified?: number | boolean }): IndexedRomFile {
+    return {
+      ...row,
+      verified: row.verified === undefined ? true : Boolean(row.verified),
+    };
   }
 
   /** Highest applied migration id (for diagnostics). */
@@ -34,8 +47,8 @@ export class LibraryIndex {
   upsertFile(row: Omit<IndexedRomFile, "id">): void {
     this.db
       .prepare(
-        `INSERT INTO rom_files (rom_id, romm_slug, esde_folder, filename, size, sha1, path, downloaded_at)
-         VALUES (@rom_id, @romm_slug, @esde_folder, @filename, @size, @sha1, @path, @downloaded_at)
+        `INSERT INTO rom_files (rom_id, romm_slug, esde_folder, filename, size, sha1, path, downloaded_at, verified)
+         VALUES (@rom_id, @romm_slug, @esde_folder, @filename, @size, @sha1, @path, @downloaded_at, @verified)
          ON CONFLICT(path) DO UPDATE SET
            rom_id=excluded.rom_id,
            romm_slug=excluded.romm_slug,
@@ -43,19 +56,24 @@ export class LibraryIndex {
            filename=excluded.filename,
            size=excluded.size,
            sha1=excluded.sha1,
-           downloaded_at=excluded.downloaded_at`,
+           downloaded_at=excluded.downloaded_at,
+           verified=excluded.verified`,
       )
-      .run(row);
+      .run({ ...row, verified: row.verified ? 1 : 0 });
   }
 
   getByRomId(romId: number): IndexedRomFile[] {
-    return this.db
+    const rows = this.db
       .prepare(`SELECT * FROM rom_files WHERE rom_id = ?`)
-      .all(romId) as IndexedRomFile[];
+      .all(romId) as (IndexedRomFile & { verified?: number | boolean })[];
+    return rows.map((row) => this.mapRow(row));
   }
 
   getAll(): IndexedRomFile[] {
-    return this.db.prepare(`SELECT * FROM rom_files ORDER BY romm_slug, filename`).all() as IndexedRomFile[];
+    const rows = this.db
+      .prepare(`SELECT * FROM rom_files ORDER BY romm_slug, filename`)
+      .all() as (IndexedRomFile & { verified?: number | boolean })[];
+    return rows.map((row) => this.mapRow(row));
   }
 
   getDownloadedRomIds(): Set<number> {
@@ -96,14 +114,14 @@ export class LibraryIndex {
   }
 
   findByFilename(filename: string, esdeFolder?: string): IndexedRomFile[] {
-    if (esdeFolder) {
-      return this.db
-        .prepare(`SELECT * FROM rom_files WHERE filename = ? AND esde_folder = ?`)
-        .all(filename, esdeFolder) as IndexedRomFile[];
-    }
-    return this.db
-      .prepare(`SELECT * FROM rom_files WHERE filename = ?`)
-      .all(filename) as IndexedRomFile[];
+    const rows = esdeFolder
+      ? (this.db
+          .prepare(`SELECT * FROM rom_files WHERE filename = ? AND esde_folder = ?`)
+          .all(filename, esdeFolder) as (IndexedRomFile & { verified?: number | boolean })[])
+      : (this.db
+          .prepare(`SELECT * FROM rom_files WHERE filename = ?`)
+          .all(filename) as (IndexedRomFile & { verified?: number | boolean })[]);
+    return rows.map((row) => this.mapRow(row));
   }
 
   close(): void {
