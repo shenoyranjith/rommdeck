@@ -9,7 +9,7 @@ export function LibraryPage() {
   const lib = useLibraryData();
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-4">
+    <div className="flex h-full min-h-0 flex-col gap-3">
       <LibraryToolbar
         searchInput={lib.searchInput}
         onSearchInputChange={lib.setSearchInput}
@@ -23,10 +23,14 @@ export function LibraryPage() {
       />
 
       {lib.message && (
-        <div className="rounded-md border border-ok/40 bg-bg2 px-3 py-2 text-sm text-ok">{lib.message}</div>
+        <div className="border border-ok/40 bg-bg2 px-3 py-2 text-sm text-ok">
+          {lib.message}
+        </div>
       )}
       {lib.error && (
-        <div className="rounded-md border border-danger/40 bg-bg2 px-3 py-2 text-sm text-danger">{lib.error}</div>
+        <div className="border border-danger/40 bg-bg2 px-3 py-2 text-sm text-danger">
+          {lib.error}
+        </div>
       )}
 
       <div

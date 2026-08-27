@@ -1,16 +1,6 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getApi } from "../../api";
-import {
-  catalogQueryFrom,
-  fetchRomPage,
-  mergeRomPages,
-} from "./fetchCatalog";
+import { catalogQueryFrom, fetchRomPage, mergeRomPages } from "./fetchCatalog";
 import {
   catalogCacheKey,
   getCatalog,
@@ -43,7 +33,9 @@ export function useLibraryData() {
   const [loadingAll, setLoadingAll] = useState(false);
   const [loadingDownloaded, setLoadingDownloaded] = useState(false);
   const [downloadedRoms, setDownloadedRoms] = useState<RomItem[]>([]);
-  const [downloadedIds, setDownloadedIds] = useState<Set<number>>(() => new Set());
+  const [downloadedIds, setDownloadedIds] = useState<Set<number>>(
+    () => new Set(),
+  );
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busyPlatform, setBusyPlatform] = useState(false);
@@ -134,9 +126,12 @@ export function useLibraryData() {
     setTotal(0);
     setLoading(true);
     try {
-      const { items, total: nextTotal } = await fetchRomPage(catalogQueryFrom(selected, search), {
-        offset: 0,
-      });
+      const { items, total: nextTotal } = await fetchRomPage(
+        catalogQueryFrom(selected, search),
+        {
+          offset: 0,
+        },
+      );
       if (qid !== queryIdRef.current) return;
       setRoms(items);
       setTotal(nextTotal);
@@ -233,9 +228,12 @@ export function useLibraryData() {
     setLoadingMore(true);
     setError(null);
     try {
-      const { items, total: nextTotal } = await fetchRomPage(catalogQueryFrom(selected, search), {
-        offset,
-      });
+      const { items, total: nextTotal } = await fetchRomPage(
+        catalogQueryFrom(selected, search),
+        {
+          offset,
+        },
+      );
       if (qid !== queryIdRef.current) return;
       setRoms((prev) => {
         const merged = mergeRomPages(prev, items);
@@ -251,7 +249,15 @@ export function useLibraryData() {
     } finally {
       if (qid === queryIdRef.current) setLoadingMore(false);
     }
-  }, [hasMore, loading, loadingMore, loadingAll, roms.length, selected, search]);
+  }, [
+    hasMore,
+    loading,
+    loadingMore,
+    loadingAll,
+    roms.length,
+    selected,
+    search,
+  ]);
 
   useEffect(() => {
     if (!needsFullCatalog || loading) return;
@@ -373,7 +379,9 @@ export function useLibraryData() {
     }
     if (loadingAll) return `Loading ${roms.length} of ${total}…`;
     if (filter === "missing") {
-      return loadingAll ? `Loading ${roms.length} of ${total}…` : `${visible.length} missing`;
+      return loadingAll
+        ? `Loading ${roms.length} of ${total}…`
+        : `${visible.length} missing`;
     }
     if (total === 0) return "0 ROMs";
     return `${roms.length} of ${total}`;
@@ -447,7 +455,10 @@ export function useLibraryData() {
 
   const deleteLocal = useCallback(
     async (rom: RomItem) => {
-      if (!confirm(`Delete local files for "${rom.name}"? RomM is not touched.`)) return;
+      if (
+        !confirm(`Delete local files for "${rom.name}"? RomM is not touched.`)
+      )
+        return;
       await getApi().deleteLocal(rom.id);
       const slug = rom.platform_slug ?? selected?.slug;
       if (slug) invalidateDownloaded(slug);
@@ -463,8 +474,15 @@ export function useLibraryData() {
         return next;
       });
       setRoms((prev) => {
-        const next = prev.map((r) => (r.id === rom.id ? { ...r, downloaded: false } : r));
-        if (selected) setCatalog(catalogCacheKey(selected.id, search), next, totalRef.current);
+        const next = prev.map((r) =>
+          r.id === rom.id ? { ...r, downloaded: false } : r,
+        );
+        if (selected)
+          setCatalog(
+            catalogCacheKey(selected.id, search),
+            next,
+            totalRef.current,
+          );
         return next;
       });
       if (detail?.id === rom.id) setDetail({ ...rom, downloaded: false });

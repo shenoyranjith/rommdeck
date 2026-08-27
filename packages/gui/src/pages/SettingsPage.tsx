@@ -11,7 +11,13 @@ import {
   selectClass,
   textareaClass,
 } from "../components/ui";
-import { UI_THEMES, UI_THEME_LABELS, applyUiTheme, isUiTheme, type UiTheme } from "../theme";
+import {
+  UI_THEMES,
+  UI_THEME_LABELS,
+  applyUiTheme,
+  isUiTheme,
+  type UiTheme,
+} from "../theme";
 import { cn } from "../lib/cn";
 
 interface Config {
@@ -64,7 +70,11 @@ export function SettingsPage() {
   }, []);
 
   if (!cfg) {
-    return <div className="py-10 text-center text-sm text-muted">Loading settings…</div>;
+    return (
+      <div className="py-10 text-center text-sm text-muted">
+        Loading settings…
+      </div>
+    );
   }
 
   const setTheme = async (theme: UiTheme) => {
@@ -84,7 +94,10 @@ export function SettingsPage() {
     try {
       let platformMapOverrides: Record<string, string> = {};
       try {
-        platformMapOverrides = JSON.parse(overridesText) as Record<string, string>;
+        platformMapOverrides = JSON.parse(overridesText) as Record<
+          string,
+          string
+        >;
       } catch {
         throw new Error("Platform map overrides must be valid JSON object");
       }
@@ -110,7 +123,8 @@ export function SettingsPage() {
     try {
       await getApi().saveConfig({ romm: cfg.romm });
       const result = await getApi().testConnection();
-      if (result.ok) setMessage(`Connected — ${result.platforms ?? 0} platforms`);
+      if (result.ok)
+        setMessage(`Connected — ${result.platforms ?? 0} platforms`);
       else setError(result.error ?? "Connection failed");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -125,12 +139,18 @@ export function SettingsPage() {
         title="Settings"
         description={
           <>
-            Shared with <span className="font-mono text-accent">rommdeck-syncd</span>
+            Shared with{" "}
+            <span className="font-mono text-accent">rommdeck-syncd</span>
           </>
         }
         actions={
           <>
-            <button type="button" className={btnClass} disabled={testing} onClick={() => void test()}>
+            <button
+              type="button"
+              className={btnClass}
+              disabled={testing}
+              onClick={() => void test()}
+            >
               Test connection
             </button>
             <button
@@ -152,7 +172,8 @@ export function SettingsPage() {
         <Panel title="Appearance">
           <div className="p-4">
             <p className="mb-3 text-sm text-muted">
-              Color scheme only — shell layout stays the same. Applies immediately.
+              Color scheme only — shell layout stays the same. Applies
+              immediately.
             </p>
             <div className="grid grid-cols-2 gap-2">
               {UI_THEMES.map((theme) => {
@@ -163,14 +184,21 @@ export function SettingsPage() {
                     type="button"
                     onClick={() => void setTheme(theme)}
                     className={cn(
-                      "rounded-md border px-3 py-3 text-left text-sm transition-colors",
+                      "border px-3 py-3 text-left text-sm transition-colors",
                       active
                         ? "border-accent bg-accent text-accent-fg shadow-[var(--glow)]"
                         : "border-line bg-bg0 text-text hover:border-accent/60",
                     )}
                   >
-                    <div className="font-semibold">{UI_THEME_LABELS[theme]}</div>
-                    <div className={cn("mt-0.5 font-mono text-[11px]", active ? "opacity-80" : "text-muted")}>
+                    <div className="font-semibold">
+                      {UI_THEME_LABELS[theme]}
+                    </div>
+                    <div
+                      className={cn(
+                        "mt-0.5 font-mono text-[11px]",
+                        active ? "opacity-80" : "text-muted",
+                      )}
+                    >
                       {theme}
                     </div>
                   </button>
@@ -186,7 +214,12 @@ export function SettingsPage() {
               <input
                 className={inputClass}
                 value={cfg.romm.baseUrl}
-                onChange={(e) => setCfg({ ...cfg, romm: { ...cfg.romm, baseUrl: e.target.value } })}
+                onChange={(e) =>
+                  setCfg({
+                    ...cfg,
+                    romm: { ...cfg.romm, baseUrl: e.target.value },
+                  })
+                }
                 placeholder="http://192.168.1.10:8080"
               />
             </Field>
@@ -195,7 +228,12 @@ export function SettingsPage() {
                 className={inputClass}
                 type="password"
                 value={cfg.romm.apiToken}
-                onChange={(e) => setCfg({ ...cfg, romm: { ...cfg.romm, apiToken: e.target.value } })}
+                onChange={(e) =>
+                  setCfg({
+                    ...cfg,
+                    romm: { ...cfg.romm, apiToken: e.target.value },
+                  })
+                }
                 placeholder="rmm_…"
               />
             </Field>
@@ -209,7 +247,10 @@ export function SettingsPage() {
                 className={inputClass}
                 value={cfg.retrodeck.configPath}
                 onChange={(e) =>
-                  setCfg({ ...cfg, retrodeck: { ...cfg.retrodeck, configPath: e.target.value } })
+                  setCfg({
+                    ...cfg,
+                    retrodeck: { ...cfg.retrodeck, configPath: e.target.value },
+                  })
                 }
               />
             </Field>
@@ -218,7 +259,10 @@ export function SettingsPage() {
                 className={inputClass}
                 value={cfg.retrodeck.romsPath}
                 onChange={(e) =>
-                  setCfg({ ...cfg, retrodeck: { ...cfg.retrodeck, romsPath: e.target.value } })
+                  setCfg({
+                    ...cfg,
+                    retrodeck: { ...cfg.retrodeck, romsPath: e.target.value },
+                  })
                 }
               />
             </Field>
@@ -227,7 +271,10 @@ export function SettingsPage() {
                 className={inputClass}
                 value={cfg.retrodeck.savesPath}
                 onChange={(e) =>
-                  setCfg({ ...cfg, retrodeck: { ...cfg.retrodeck, savesPath: e.target.value } })
+                  setCfg({
+                    ...cfg,
+                    retrodeck: { ...cfg.retrodeck, savesPath: e.target.value },
+                  })
                 }
               />
             </Field>
@@ -236,7 +283,10 @@ export function SettingsPage() {
                 className={inputClass}
                 value={cfg.retrodeck.statesPath}
                 onChange={(e) =>
-                  setCfg({ ...cfg, retrodeck: { ...cfg.retrodeck, statesPath: e.target.value } })
+                  setCfg({
+                    ...cfg,
+                    retrodeck: { ...cfg.retrodeck, statesPath: e.target.value },
+                  })
                 }
               />
             </Field>
@@ -254,7 +304,12 @@ export function SettingsPage() {
               <input
                 className={inputClass}
                 value={cfg.sync.deviceName}
-                onChange={(e) => setCfg({ ...cfg, sync: { ...cfg.sync, deviceName: e.target.value } })}
+                onChange={(e) =>
+                  setCfg({
+                    ...cfg,
+                    sync: { ...cfg.sync, deviceName: e.target.value },
+                  })
+                }
               />
             </Field>
             <Field label="Sync mode">
@@ -264,7 +319,10 @@ export function SettingsPage() {
                 onChange={(e) =>
                   setCfg({
                     ...cfg,
-                    sync: { ...cfg.sync, mode: e.target.value as Config["sync"]["mode"] },
+                    sync: {
+                      ...cfg.sync,
+                      mode: e.target.value as Config["sync"]["mode"],
+                    },
                   })
                 }
               >
@@ -282,7 +340,10 @@ export function SettingsPage() {
                 onChange={(e) =>
                   setCfg({
                     ...cfg,
-                    sync: { ...cfg.sync, intervalSeconds: Number(e.target.value) || 300 },
+                    sync: {
+                      ...cfg.sync,
+                      intervalSeconds: Number(e.target.value) || 300,
+                    },
                   })
                 }
               />
@@ -296,7 +357,10 @@ export function SettingsPage() {
                 onChange={(e) =>
                   setCfg({
                     ...cfg,
-                    sync: { ...cfg.sync, debounceSeconds: Number(e.target.value) || 45 },
+                    sync: {
+                      ...cfg.sync,
+                      debounceSeconds: Number(e.target.value) || 45,
+                    },
                   })
                 }
               />
@@ -310,7 +374,8 @@ export function SettingsPage() {
                     ...cfg,
                     sync: {
                       ...cfg.sync,
-                      conflictPolicy: e.target.value as Config["sync"]["conflictPolicy"],
+                      conflictPolicy: e.target
+                        .value as Config["sync"]["conflictPolicy"],
                     },
                   })
                 }
@@ -322,7 +387,9 @@ export function SettingsPage() {
             </Field>
             <p className="text-sm text-muted">
               Device ID:{" "}
-              <span className="font-mono text-accent">{cfg.sync.deviceId ?? "not registered"}</span>
+              <span className="font-mono text-accent">
+                {cfg.sync.deviceId ?? "not registered"}
+              </span>
             </p>
           </div>
         </Panel>

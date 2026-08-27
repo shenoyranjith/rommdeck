@@ -1,11 +1,18 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { NavLink, Route, Routes } from "react-router-dom";
 import { LibraryPage } from "./pages/LibraryPage";
 import { DownloadsPage } from "./pages/DownloadsPage";
 import { SyncPage } from "./pages/SyncPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { StatusBar } from "./components/StatusBar";
-import { IconDownloads, IconLibrary, IconSettings, IconSync } from "./components/icons";
+import { WindowControls } from "./components/WindowControls";
+import { BrandMark } from "./components/BrandMark";
+import {
+  IconDownloads,
+  IconLibrary,
+  IconSettings,
+  IconSync,
+} from "./components/icons";
 import { cn } from "./lib/cn";
 import { getApi } from "./api";
 import { applyUiTheme, isUiTheme, DEFAULT_UI_THEME } from "./theme";
@@ -18,72 +25,87 @@ const NAV = [
 ] as const;
 
 export function App() {
+  const [appVersion, setAppVersion] = useState<string | null>(null);
+
   useEffect(() => {
     void (async () => {
       try {
         const cfg = await getApi().getConfig();
-        applyUiTheme(isUiTheme(cfg.ui?.theme) ? cfg.ui.theme : DEFAULT_UI_THEME);
+        applyUiTheme(
+          isUiTheme(cfg.ui?.theme) ? cfg.ui.theme : DEFAULT_UI_THEME,
+        );
       } catch {
         applyUiTheme(DEFAULT_UI_THEME);
+      }
+      try {
+        setAppVersion(await getApi().getAppVersion());
+      } catch {
+        setAppVersion(null);
       }
     })();
   }, []);
 
   return (
-    <div className="relative flex h-full min-h-0 bg-bg0 text-text">
+    <div className="relative h-full w-full min-h-0 min-w-0 overflow-hidden bg-bg0 text-text">
+      {/* CRT scanlines */}
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 z-50 opacity-[0.07]"
+        className="pointer-events-none absolute inset-0 z-50 opacity-[0.06]"
         style={{
           backgroundImage:
             "repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.55) 2px, rgba(0,0,0,0.55) 3px)",
         }}
       />
 
-      <aside className="relative z-10 flex w-[200px] shrink-0 flex-col border-r border-line bg-bg1/80 px-3 py-4">
-        <div className="mb-8 flex flex-col items-start gap-2 px-1">
-          <div
-            className="grid size-12 place-items-center rounded-md border border-accent bg-bg0 text-lg font-bold tracking-wide text-accent"
-            style={{ boxShadow: "var(--glow)" }}
-          >
-            RD
-          </div>
-          <div className="text-base font-semibold tracking-wide text-text">RommDeck</div>
-        </div>
-
-        <nav className="flex flex-1 flex-col gap-1">
-          {NAV.map(({ to, end, label, Icon }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={end}
-              className={({ isActive }) =>
-                cn(
-                  "flex items-center gap-2.5 rounded-md px-3 py-2.5 text-sm transition-colors",
-                  isActive
-                    ? "bg-accent font-semibold text-accent-fg shadow-[var(--glow)]"
-                    : "text-muted hover:bg-bg2 hover:text-text",
-                )
-              }
-            >
-              <Icon className="shrink-0" />
-              {label}
-            </NavLink>
-          ))}
-        </nav>
-
-        <div className="mt-4 rounded-md border border-line bg-bg0/60 px-3 py-2 text-[11px] leading-relaxed text-muted">
-          <div className="font-medium text-text">RommDeck v0.1.0</div>
-          <div className="font-mono">RomM → RetroDECK</div>
-        </div>
-      </aside>
-
-      <div className="relative z-10 flex min-w-0 flex-1 flex-col p-3">
+      <div className="relative z-10 flex h-full min-h-0">
+        {/* Drag strip for frameless window (controls are no-drag) */}
         <div
-          className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-accent/70 bg-bg1/40"
-          style={{ boxShadow: "var(--glow)" }}
-        >
-          <main className="min-h-0 flex-1 overflow-auto p-4 md:p-5">
+          aria-hidden
+          className="app-drag absolute inset-x-0 top-0 z-30 h-10"
+        />
+        <WindowControls />
+
+        <aside className="app-no-drag relative z-20 flex w-[232px] shrink-0 flex-col border-r border-accent/80 bg-bg1/90 px-3 py-5">
+          <div className="app-drag mb-10 flex w-full flex-col items-center gap-3.5 px-1">
+            <BrandMark />
+            <div className="text-center text-[1.85rem] leading-none font-bold tracking-wide text-text">
+              RommDeck
+            </div>
+          </div>
+
+          <nav className="app-no-drag flex flex-1 flex-col gap-1.5">
+            {NAV.map(({ to, end, label, Icon }) => (
+              <NavLink
+                key={to}
+                to={to}
+                end={end}
+                className={({ isActive }) =>
+                  cn(
+                    "flex items-center gap-3 border px-3 py-3 text-lg font-semibold transition-colors",
+                    isActive
+                      ? "border-accent border-l-[6px] bg-accent/15 font-bold text-accent"
+                      : "border-transparent text-text hover:bg-bg2/60",
+                  )
+                }
+              >
+                <Icon className="size-8 shrink-0" strokeWidth={2.15} />
+                {label}
+              </NavLink>
+            ))}
+          </nav>
+
+          <div className="mt-4 border border-accent bg-bg0 px-3 py-2.5 text-center">
+            <div className="text-[16px] font-bold leading-snug text-text">
+              {appVersion ? `RommDeck v${appVersion}` : "RommDeck"}
+            </div>
+            <div className="mt-1 text-[15px] leading-snug font-normal text-muted">
+              RomM → RetroDECK
+            </div>
+          </div>
+        </aside>
+
+        <div className="app-no-drag relative z-20 flex min-w-0 flex-1 flex-col bg-bg0">
+          <main className="min-h-0 flex-1 overflow-auto px-4 pt-4 pr-14 pb-1 md:px-5 md:pt-5 md:pr-16">
             <Routes>
               <Route path="/" element={<LibraryPage />} />
               <Route path="/downloads" element={<DownloadsPage />} />

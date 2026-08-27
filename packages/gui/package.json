@@ -22,6 +22,7 @@
     "@radix-ui/react-tooltip": "^1.2.16",
     "@rommdeck/core": "*",
     "@tanstack/react-virtual": "^3.14.10",
+    "lucide-react": "^1.34.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.1.5"

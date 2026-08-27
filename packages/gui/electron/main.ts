@@ -90,7 +90,10 @@ function createWindow(): void {
     minWidth: 960,
     minHeight: 640,
     title: "RommDeck",
-    backgroundColor: "#0f1419",
+    // Match default candy accent — CSS frame is a body fill ring; edge clip reveals this.
+    backgroundColor: "#ff2d95",
+    frame: false,
+    show: false,
     webPreferences: {
       preload,
       contextIsolation: true,
@@ -99,6 +102,17 @@ function createWindow(): void {
       sandbox: true,
     },
   });
+
+  mainWindow.once("ready-to-show", () => {
+    mainWindow?.show();
+  });
+
+  const emitMaximized = () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    mainWindow.webContents.send("window:maximized", mainWindow.isMaximized());
+  };
+  mainWindow.on("maximize", emitMaximized);
+  mainWindow.on("unmaximize", emitMaximized);
 
   mainWindow.webContents.on("preload-error", (_event, preloadPath, error) => {
     console.error(`[rommdeck] preload failed (${preloadPath}):`, error);
@@ -111,7 +125,7 @@ function createWindow(): void {
   if (process.env.VITE_DEV_SERVER_URL) {
     void mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
     // Docked DevTools — detached mode left orphan windows on every restart
-    mainWindow.webContents.openDevTools({ mode: "right" });
+    mainWindow.webContents.openDevTools({ mode: "detach" });
   } else {
     void mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
   }
@@ -149,8 +163,40 @@ function registerIpc(): void {
   ipcMain.removeHandler("daemon:systemctl");
   ipcMain.removeHandler("sync:now");
   ipcMain.removeHandler("shell:openPath");
+  ipcMain.removeHandler("window:minimize");
+  ipcMain.removeHandler("window:maximize");
+  ipcMain.removeHandler("window:close");
+  ipcMain.removeHandler("window:isMaximized");
+  ipcMain.removeHandler("window:setBackground");
+  ipcMain.removeHandler("app:getVersion");
 
   ipcMain.handle("config:get", () => loadConfig());
+
+  const windowFrom = (e: Electron.IpcMainInvokeEvent) =>
+    BrowserWindow.fromWebContents(e.sender);
+
+  ipcMain.handle("app:getVersion", () => app.getVersion());
+
+  ipcMain.handle("window:minimize", (e) => {
+    windowFrom(e)?.minimize();
+  });
+  ipcMain.handle("window:maximize", (e) => {
+    const win = windowFrom(e);
+    if (!win) return false;
+    if (win.isMaximized()) win.unmaximize();
+    else win.maximize();
+    return win.isMaximized();
+  });
+  ipcMain.handle("window:close", (e) => {
+    windowFrom(e)?.close();
+  });
+  ipcMain.handle("window:isMaximized", (e) => windowFrom(e)?.isMaximized() ?? false);
+  ipcMain.handle("window:setBackground", (e, color: string) => {
+    const win = windowFrom(e);
+    if (win && typeof color === "string" && /^#[0-9a-fA-F]{6}$/.test(color)) {
+      win.setBackgroundColor(color);
+    }
+  });
 
   ipcMain.handle("config:save", (_e, partial: Partial<RommDeckConfig>) => {
     const next = updateConfig(partial);

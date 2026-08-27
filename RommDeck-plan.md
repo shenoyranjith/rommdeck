@@ -228,7 +228,7 @@ rommdeck/
 ### Decisions
 
 - **Shell / layout source of truth:** `docs/mockups/shell-vector.png` (the Vector mockup). Every theme must use this structure; only accent colors change.
-- **UI stack:** **Tailwind CSS v4** (utilities + CSS-variable themes) + **Radix UI** (unstyled accessible primitives). Custom Vector shell — no MUI/Chakra/Ant. Optional shadcn copy-paste later if useful; not a hard dependency.
+- **UI stack:** **Tailwind CSS v4** (utilities + CSS-variable themes) + **Radix UI** (unstyled accessible primitives) + **lucide-react** icons. Custom Vector shell — no MUI/Chakra/Ant. Optional shadcn copy-paste later if useful; not a hard dependency.
 - **Default theme:** `candy` (magenta accents on the vector shell).
 - **Selectable themes:** `candy` | `gold` | `vector` | `mint`.
 - **Persistence:** `ui.theme` in `~/.config/rommdeck/config.json`; Settings picker; apply via `data-theme` on the document root.
@@ -237,11 +237,13 @@ rommdeck/
 
 ### Shell elements (from Vector)
 
-- Left sidebar: RD square brand, wordmark, icon nav with solid filled active state, bottom version box
-- Main framed content panel (thin accent border)
+- Left sidebar: RD square brand, wordmark, icon nav with **outline** active state (accent border + accent text), bottom version box
+- Outer accent frame around the whole app (square corners — no border-radius / chamfer on chrome)
+- Frameless Electron window + mockup-style minimize / maximize / close (accent stroke) top-right; drag strip to move
+- Main content flush beside sidebar (accent divider); bottom stats/status strip
 - Library header + toolbar chrome (style existing controls; do not add new Scan Library product behavior)
 - Platforms rail + ROM grid (existing split, vector styling)
-- Bottom stats/status strip chrome (wire to existing counts/daemon status where possible)
+- Sharp corners everywhere (`border-radius: 0`); RD mark keeps its SVG chamfer only
 
 ### Mockups
 
@@ -257,10 +259,10 @@ rommdeck/
 
 1. ~~Add Tailwind v4 + Radix to `packages/gui`; wire CSS vars to `[data-theme]`~~ **done**
 2. ~~Theme token sets for candy / gold / vector / mint~~ **done** (`themes.css`)
-3. ~~Rebuild App shell in Tailwind to match `shell-vector.png`~~ **done**
+3. ~~Rebuild App shell in Tailwind to match `shell-vector.png`~~ **done** (accent frame, square corners, outline nav, status strip, Library chrome vector pass)
 4. ~~Restyle remaining pages (Downloads / Sync / Settings)~~ **done** — shared `components/ui.tsx`; legacy `app.css` reduced to fonts only. Radix skins still pending.
 5. ~~Add `ui.theme` to config + Settings theme picker; apply on load/save~~ **done**
-6. Smoke-check all routes + theme switching (desktop + narrow)
+6. Smoke-check all routes + theme switching (desktop + narrow); iterate mockup deltas from review
 
 ### Later UI passes (not this one)
 

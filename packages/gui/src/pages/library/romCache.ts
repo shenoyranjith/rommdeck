@@ -10,7 +10,10 @@ const catalogByKey = new Map<string, CatalogCacheEntry>();
 const downloadedRomsBySlug = new Map<string, RomItem[]>();
 const downloadedIdsBySlug = new Map<string, number[]>();
 
-export function catalogCacheKey(platformId: number | undefined | null, search: string): string {
+export function catalogCacheKey(
+  platformId: number | undefined | null,
+  search: string,
+): string {
   return `${platformId ?? "none"}:${search}`;
 }
 

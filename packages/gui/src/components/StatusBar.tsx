@@ -1,6 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { getApi } from "../api";
-import { IconCheck, IconClock, IconDatabase, IconSync, IconWarn } from "./icons";
+import {
+  IconCheck,
+  IconClock,
+  IconDatabase,
+  IconSync,
+  IconWarn,
+} from "./icons";
 
 interface DaemonStatus {
   running: boolean;
@@ -20,6 +26,26 @@ function formatWhen(iso: string | null): string {
   }
 }
 
+function Stat({
+  icon,
+  label,
+  value,
+  valueClass = "text-accent",
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string;
+  valueClass?: string;
+}) {
+  return (
+    <span className="inline-flex items-center gap-2.5">
+      <span className="text-accent">{icon}</span>
+      <span className="text-text/90">{label}</span>
+      <span className={`font-mono ${valueClass}`}>{value}</span>
+    </span>
+  );
+}
+
 export function StatusBar() {
   const [status, setStatus] = useState<DaemonStatus | null>(null);
   const [queueLen, setQueueLen] = useState(0);
@@ -34,7 +60,14 @@ export function StatusBar() {
       }
       try {
         const jobs = (await getApi().listDownloads()) as { status: string }[];
-        setQueueLen(jobs.filter((j) => j.status !== "done" && j.status !== "error" && j.status !== "cancelled").length);
+        setQueueLen(
+          jobs.filter(
+            (j) =>
+              j.status !== "done" &&
+              j.status !== "error" &&
+              j.status !== "cancelled",
+          ).length,
+        );
       } catch {
         /* ignore */
       }
@@ -44,43 +77,52 @@ export function StatusBar() {
     return () => clearInterval(t);
   }, []);
 
-  const daemonLabel = status?.running ? "Daemon on" : "Daemon off";
   const result = status?.lastResult;
 
   return (
-    <footer className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-line px-4 py-2 text-xs text-muted">
-      <span className="inline-flex items-center gap-1.5">
-        <IconDatabase className="text-accent" />
-        <span className="text-text">Queue</span>
-        <span className="font-mono text-accent">{queueLen}</span>
-      </span>
-      <span className="inline-flex items-center gap-1.5">
-        <IconSync className={status?.running ? "text-ok" : "text-muted"} />
-        <span className="text-text">{daemonLabel}</span>
-      </span>
-      <span className="inline-flex items-center gap-1.5">
-        {result === "error" ? (
-          <IconWarn className="text-danger" />
-        ) : result === "ok" || result === "partial" ? (
-          <IconCheck className="text-ok" />
-        ) : (
-          <IconCheck className="text-muted" />
+    <div className="shrink-0 px-3 pt-2 pb-2">
+      <footer className="flex flex-wrap items-center gap-x-7 gap-y-2 border border-accent bg-bg1/70 px-4 py-2.5 text-xs">
+        <Stat
+          icon={<IconDatabase className="size-3.5" />}
+          label="Queue"
+          value={String(queueLen)}
+        />
+        <Stat
+          icon={<IconSync className="size-3.5" />}
+          label="Daemon"
+          value={status?.running ? "on" : "off"}
+          valueClass={status?.running ? "text-ok" : "text-muted"}
+        />
+        <Stat
+          icon={
+            result === "error" ? (
+              <IconWarn className="size-3.5 text-danger" />
+            ) : (
+              <IconCheck className="size-3.5" />
+            )
+          }
+          label="Last sync"
+          value={formatWhen(status?.lastSyncAt ?? null)}
+        />
+        <Stat
+          icon={<IconClock className="size-3.5" />}
+          label="Ops"
+          value={`${status?.completedOps ?? 0} ok / ${status?.failedOps ?? 0} fail`}
+        />
+        {result && (
+          <span className="font-mono tracking-wide text-accent uppercase">
+            {result}
+          </span>
         )}
-        <span className="text-text">Last sync</span>
-        <span className="font-mono">{formatWhen(status?.lastSyncAt ?? null)}</span>
-        {result && <span className="uppercase text-accent">{result}</span>}
-      </span>
-      <span className="inline-flex items-center gap-1.5">
-        <IconClock className="text-accent" />
-        <span className="font-mono">
-          {status?.completedOps ?? 0} ok / {status?.failedOps ?? 0} fail
-        </span>
-      </span>
-      {status?.lastError && (
-        <span className="truncate text-danger" title={status.lastError}>
-          {status.lastError}
-        </span>
-      )}
-    </footer>
+        {status?.lastError && (
+          <span
+            className="min-w-0 flex-1 truncate text-danger"
+            title={status.lastError}
+          >
+            {status.lastError}
+          </span>
+        )}
+      </footer>
+    </div>
   );
 }

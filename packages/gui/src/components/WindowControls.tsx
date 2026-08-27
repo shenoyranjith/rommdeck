@@ -1,0 +1,89 @@
+import { useEffect, useState, type ReactNode } from "react";
+import { getApi } from "../api";
+import { IconClose, IconMaximize, IconMinimize, IconRestore } from "./icons";
+
+function ControlButton({
+  label,
+  onClick,
+  danger,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  danger?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+      className={
+        danger
+          ? "grid size-8 place-items-center text-accent transition-colors hover:bg-danger/20 hover:text-danger"
+          : "grid size-8 place-items-center text-accent transition-colors hover:bg-accent/15 hover:text-accent"
+      }
+    >
+      {children}
+    </button>
+  );
+}
+
+/** Mockup-style frameless window controls (top-right). */
+export function WindowControls() {
+  const [maximized, setMaximized] = useState(false);
+
+  useEffect(() => {
+    let off = () => {};
+    try {
+      const api = getApi();
+      void api.windowIsMaximized().then(setMaximized);
+      off = api.onWindowMaximized(setMaximized);
+    } catch {
+      /* browser / no bridge */
+    }
+    return () => off();
+  }, []);
+
+  const run = (fn: () => Promise<unknown>) => {
+    try {
+      void fn();
+    } catch {
+      /* ignore */
+    }
+  };
+
+  return (
+    <div className="app-no-drag absolute top-1.5 right-1.5 z-40 flex items-center border border-accent/80 bg-bg0/90">
+      <ControlButton
+        label="Minimize"
+        onClick={() => run(() => getApi().windowMinimize())}
+      >
+        <IconMinimize className="size-4" />
+      </ControlButton>
+      <ControlButton
+        label={maximized ? "Restore" : "Maximize"}
+        onClick={() =>
+          run(async () => {
+            const next = await getApi().windowMaximize();
+            setMaximized(next);
+          })
+        }
+      >
+        {maximized ? (
+          <IconRestore className="size-4" />
+        ) : (
+          <IconMaximize className="size-4" />
+        )}
+      </ControlButton>
+      <ControlButton
+        label="Close"
+        danger
+        onClick={() => run(() => getApi().windowClose())}
+      >
+        <IconClose className="size-4" />
+      </ControlButton>
+    </div>
+  );
+}

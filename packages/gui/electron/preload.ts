@@ -34,6 +34,13 @@ export interface RommDeckApi {
   systemctl: (action: "enable" | "disable" | "start" | "stop" | "status") => Promise<{ ok: boolean; output: string }>;
   syncNow: () => Promise<unknown>;
   openPath: (p: string) => Promise<string>;
+  getAppVersion: () => Promise<string>;
+  setWindowBackground: (color: string) => Promise<void>;
+  windowMinimize: () => Promise<void>;
+  windowMaximize: () => Promise<boolean>;
+  windowClose: () => Promise<void>;
+  windowIsMaximized: () => Promise<boolean>;
+  onWindowMaximized: (cb: (maximized: boolean) => void) => () => void;
 }
 
 const api: RommDeckApi = {
@@ -70,6 +77,17 @@ const api: RommDeckApi = {
   systemctl: (action) => ipcRenderer.invoke("daemon:systemctl", action),
   syncNow: () => ipcRenderer.invoke("sync:now"),
   openPath: (p) => ipcRenderer.invoke("shell:openPath", p),
+  getAppVersion: () => ipcRenderer.invoke("app:getVersion"),
+  setWindowBackground: (color) => ipcRenderer.invoke("window:setBackground", color),
+  windowMinimize: () => ipcRenderer.invoke("window:minimize"),
+  windowMaximize: () => ipcRenderer.invoke("window:maximize"),
+  windowClose: () => ipcRenderer.invoke("window:close"),
+  windowIsMaximized: () => ipcRenderer.invoke("window:isMaximized"),
+  onWindowMaximized: (cb) => {
+    const handler = (_: unknown, maximized: boolean) => cb(maximized);
+    ipcRenderer.on("window:maximized", handler);
+    return () => ipcRenderer.removeListener("window:maximized", handler);
+  },
 };
 
 contextBridge.exposeInMainWorld("rommdeck", api);

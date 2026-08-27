@@ -25,7 +25,9 @@ export function DownloadsPage() {
   const [jobs, setJobs] = useState<DownloadJob[]>([]);
 
   useEffect(() => {
-    void getApi().listDownloads().then((j) => setJobs(j as DownloadJob[]));
+    void getApi()
+      .listDownloads()
+      .then((j) => setJobs(j as DownloadJob[]));
     const offJob = getApi().onDownloadJob((job) => {
       const j = job as DownloadJob;
       setJobs((prev) => {
@@ -72,30 +74,41 @@ export function DownloadsPage() {
               {jobs.map((job) => {
                 const pct =
                   job.totalBytes && job.totalBytes > 0
-                    ? Math.min(100, Math.round((job.progressBytes / job.totalBytes) * 100))
+                    ? Math.min(
+                        100,
+                        Math.round((job.progressBytes / job.totalBytes) * 100),
+                      )
                     : job.status === "done"
                       ? 100
                       : 0;
                 return (
                   <tr key={job.id} className="border-b border-line/70">
                     <td className="px-3 py-3 text-text">{job.romName}</td>
-                    <td className="px-3 py-3 font-mono text-xs text-accent">{job.rommSlug}</td>
+                    <td className="px-3 py-3 font-mono text-xs text-accent">
+                      {job.rommSlug}
+                    </td>
                     <td className="px-3 py-3">
                       <span
                         className={cn(
-                          "inline-block rounded border border-line bg-bg2 px-2 py-0.5 font-mono text-[11px] uppercase",
+                          "inline-block border border-line bg-bg2 px-2 py-0.5 font-mono text-[11px] uppercase",
                           job.status === "done" && "border-ok/40 text-ok",
-                          job.status === "error" && "border-danger/40 text-danger",
-                          (job.status === "queued" || job.status === "downloading") &&
+                          job.status === "error" &&
+                            "border-danger/40 text-danger",
+                          (job.status === "queued" ||
+                            job.status === "downloading") &&
                             "border-accent/40 text-accent",
                         )}
                       >
                         {job.status}
                       </span>
-                      {job.error && <div className="mt-1 text-xs text-muted">{job.error}</div>}
+                      {job.error && (
+                        <div className="mt-1 text-xs text-muted">
+                          {job.error}
+                        </div>
+                      )}
                     </td>
                     <td className="min-w-[160px] px-3 py-3">
-                      <div className="h-1.5 overflow-hidden rounded-full bg-bg0">
+                      <div className="h-1.5 overflow-hidden bg-bg0">
                         <div
                           className="h-full bg-accent transition-[width] duration-200"
                           style={{ width: `${pct}%`, boxShadow: "var(--glow)" }}
@@ -103,11 +116,14 @@ export function DownloadsPage() {
                       </div>
                       <div className="mt-1 font-mono text-[11px] text-muted">
                         {formatBytes(job.progressBytes)}
-                        {job.totalBytes ? ` / ${formatBytes(job.totalBytes)}` : ""}
+                        {job.totalBytes
+                          ? ` / ${formatBytes(job.totalBytes)}`
+                          : ""}
                       </div>
                     </td>
                     <td className="px-3 py-3 text-right">
-                      {(job.status === "queued" || job.status === "downloading") && (
+                      {(job.status === "queued" ||
+                        job.status === "downloading") && (
                         <button
                           type="button"
                           className={btnClass}

@@ -9,7 +9,7 @@ import {
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { cn } from "../../lib/cn";
-import { IconCheck } from "../../components/icons";
+import { IconCheck, IconWarn } from "../../components/icons";
 import type { RomItem } from "./types";
 
 const MIN_CARD_WIDTH = 150;
@@ -50,23 +50,23 @@ const RomCard = memo(function RomCard({
   return (
     <article
       className={cn(
-        "relative flex cursor-pointer flex-col overflow-hidden rounded-md border bg-bg2",
+        "relative flex cursor-pointer flex-col overflow-hidden border bg-bg2",
         focused || selected
           ? "border-accent shadow-[var(--glow)]"
-          : "border-line hover:border-accent/60",
+          : "border-accent/80 hover:border-accent",
       )}
       onClick={() => onCardClick(rom)}
     >
       {selectMode && selected && (
         <span
-          className="absolute top-2 right-2 z-10 grid size-7 place-items-center rounded-full border border-accent bg-accent text-accent-fg"
+          className="absolute top-2 right-2 z-10 grid size-7 place-items-center border border-accent bg-accent text-accent-fg"
           style={{ boxShadow: "var(--glow)" }}
           aria-hidden
         >
           <IconCheck className="size-4" />
         </span>
       )}
-      <div className="aspect-[3/4] shrink-0 bg-bg0 text-xs text-muted">
+      <div className="aspect-[3/4] shrink-0 border-b border-accent/40 bg-bg0 text-xs text-muted">
         {cover ? (
           <img
             src={cover}
@@ -76,8 +76,11 @@ const RomCard = memo(function RomCard({
             className="h-full w-full object-cover"
           />
         ) : (
-          <div className="grid h-full place-items-center">
-            <span className="text-accent/80">NO COVER</span>
+          <div className="grid h-full place-items-center gap-1 text-accent">
+            <IconWarn className="size-5 opacity-80" />
+            <span className="text-[10px] font-semibold tracking-wide">
+              NO COVER
+            </span>
           </div>
         )}
       </div>
@@ -90,10 +93,15 @@ const RomCard = memo(function RomCard({
         </div>
         <span
           className={cn(
-            "inline-flex h-5 w-fit items-center rounded px-1.5 text-[10px] font-semibold tracking-wide uppercase",
-            rom.downloaded ? "bg-ok/15 text-ok" : "border border-warn/50 text-warn",
+            "inline-flex h-5 w-fit items-center gap-1 text-[10px] font-semibold tracking-wide uppercase",
+            rom.downloaded ? "text-accent" : "text-warn",
           )}
         >
+          {rom.downloaded ? (
+            <IconCheck className="size-3.5" />
+          ) : (
+            <IconWarn className="size-3.5" />
+          )}
           {rom.downloaded ? "Downloaded" : "Missing"}
         </span>
         {!selectMode && (
@@ -101,7 +109,7 @@ const RomCard = memo(function RomCard({
             {!rom.downloaded ? (
               <button
                 type="button"
-                className="h-8 flex-1 rounded border border-accent bg-accent/15 px-2 text-xs font-medium text-accent"
+                className="h-8 flex-1 border border-accent bg-accent/15 px-2 text-xs font-medium text-accent"
                 onClick={() => onDownload(rom)}
               >
                 Download
@@ -109,7 +117,7 @@ const RomCard = memo(function RomCard({
             ) : (
               <button
                 type="button"
-                className="h-8 flex-1 rounded border border-danger/50 px-2 text-xs text-danger"
+                className="h-8 flex-1 border border-danger/50 px-2 text-xs text-danger"
                 onClick={() => onDeleteLocal(rom)}
               >
                 Delete local
@@ -159,7 +167,8 @@ export function RomGrid({
   }, [scrollRef]);
 
   const cols = useMemo(() => columnsForWidth(width), [width]);
-  const cardWidth = width <= 0 ? MIN_CARD_WIDTH : (width - GAP * (cols - 1)) / cols;
+  const cardWidth =
+    width <= 0 ? MIN_CARD_WIDTH : (width - GAP * (cols - 1)) / cols;
   const estimate = useMemo(
     () => rowHeight(cardWidth, selectMode),
     [cardWidth, selectMode],

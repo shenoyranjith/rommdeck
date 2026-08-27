@@ -2,7 +2,6 @@
 
 /*
  * Theme tokens — shared names; each [data-theme] only swaps colors.
- * Shell rebuild (later) will consume these via Tailwind utilities like bg-bg0, text-accent.
  */
 
 @theme inline {
@@ -40,7 +39,6 @@
   --ok: #6bcf7f;
   --font: "IBM Plex Sans", system-ui, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, monospace;
-  --radius: 6px;
   --glow: 0 0 12px color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
@@ -93,16 +91,46 @@
 }
 
 html,
-body,
-#root {
+body {
+  width: 100%;
   height: 100%;
   margin: 0;
+  overflow: hidden;
 }
 
+/*
+ * Accent frame = body fill showing around an inset #root.
+ * --shell-frame (top/left) vs --shell-frame-br (bottom/right): BR gets +1
+ * device px via syncShellFrameMetrics() so frameless edge bias looks even.
+ */
 body {
   font-family: var(--font);
   color: var(--text);
+  background: var(--accent);
+}
+
+#root {
+  /* Defaults; syncShellFrameMetrics() overwrites for DPR + BR compensation */
+  --shell-frame: 3px;
+  --shell-frame-br: 4px;
+  position: absolute;
+  top: var(--shell-frame);
+  left: var(--shell-frame);
+  width: calc(100% - var(--shell-frame) - var(--shell-frame-br));
+  height: calc(100% - var(--shell-frame) - var(--shell-frame-br));
+  max-width: calc(100% - var(--shell-frame) - var(--shell-frame-br));
+  max-height: calc(100% - var(--shell-frame) - var(--shell-frame-br));
+  box-sizing: border-box;
+  overflow: hidden;
   background: var(--bg0);
+  color: var(--text);
+}
+
+/* Hard rule: sharp corners only (no border-radius). */
+*,
+*::before,
+*::after {
+  border-radius: 0 !important;
 }
 
 * {
@@ -124,7 +152,7 @@ body {
   background: color-mix(in srgb, var(--accent) 45%, var(--bg3));
   border: 3px solid transparent;
   background-clip: padding-box;
-  border-radius: 999px;
+  border-radius: 0;
   min-height: 32px;
 }
 
@@ -177,3 +205,23 @@ body {
   background: transparent;
 }
 
+/* Frameless window drag regions */
+.app-drag {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+.app-no-drag {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+/* Sidebar RD mark — neon bloom (frame + letters are drawn in SVG). */
+.brand-mark {
+  display: block;
+  overflow: visible;
+  filter: drop-shadow(
+      0 0 4px color-mix(in srgb, var(--accent) 55%, transparent)
+    )
+    drop-shadow(0 0 12px color-mix(in srgb, var(--accent) 28%, transparent));
+}

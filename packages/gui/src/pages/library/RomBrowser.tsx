@@ -47,12 +47,14 @@ export function RomBrowser({
   onDeleteLocal: (rom: RomItem) => void;
 }) {
   return (
-    <section className="flex min-h-0 flex-col overflow-hidden rounded-md border border-line bg-bg0/50">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-3 py-2 text-sm">
-        <span className="text-text">{platform ? platform.displayName || platform.name : "ROMs"}</span>
+    <section className="flex min-h-0 flex-col overflow-hidden border border-accent bg-bg0/60">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-accent/50 px-3 py-2.5 text-sm">
+        <span className="font-medium text-text">
+          {platform ? platform.displayName || platform.name : "ROMs"}
+        </span>
         <div className="flex flex-wrap items-center gap-2">
           <div
-            className="flex rounded-md border border-line p-0.5 text-[11px]"
+            className="flex border border-accent/50 p-0.5 text-[11px]"
             title="Downloaded comes from the local library DB; Missing is the platform catalog minus those"
           >
             {(
@@ -66,8 +68,10 @@ export function RomBrowser({
                 key={value}
                 type="button"
                 className={cn(
-                  "rounded px-2.5 py-1 font-medium transition-colors",
-                  filter === value ? "bg-accent text-accent-fg" : "text-muted hover:text-text",
+                  "px-2.5 py-1 font-medium transition-colors",
+                  filter === value
+                    ? "bg-accent text-accent-fg"
+                    : "text-muted hover:text-text",
                 )}
                 onClick={() => onFilterChange(value)}
               >
@@ -79,7 +83,10 @@ export function RomBrowser({
         </div>
       </div>
 
-      {visible.length === 0 && !loadingMore && !loadingAll && !loadingDownloaded ? (
+      {visible.length === 0 &&
+      !loadingMore &&
+      !loadingAll &&
+      !loadingDownloaded ? (
         <div className="flex flex-1 items-center justify-center p-8 text-sm text-muted">
           {listLoading ? "Loading…" : "No ROMs to show"}
         </div>
@@ -95,7 +102,10 @@ export function RomBrowser({
             onDownload={onDownload}
             onDeleteLocal={onDeleteLocal}
             footer={
-              <div ref={sentinelRef} className="flex h-10 items-center justify-center text-xs text-muted">
+              <div
+                ref={sentinelRef}
+                className="flex h-10 items-center justify-center text-xs text-muted"
+              >
                 {loadingDownloaded
                   ? "Loading downloaded…"
                   : loadingAll
