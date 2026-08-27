@@ -21,8 +21,10 @@ export function LibraryToolbar({
   hasSelection,
   hasPlatform,
   busyPlatform,
+  busyKind,
   onSelectionButtonClick,
   onDownloadSelected,
+  onDeleteSelected,
   onDownloadPlatform,
 }: {
   viewMode: LibraryViewMode;
@@ -34,8 +36,10 @@ export function LibraryToolbar({
   hasSelection: boolean;
   hasPlatform: boolean;
   busyPlatform: boolean;
+  busyKind: "platform" | "download" | "delete" | null;
   onSelectionButtonClick: () => void;
   onDownloadSelected: () => void;
+  onDeleteSelected: () => void;
   onDownloadPlatform: () => void;
 }) {
   const SelectIcon =
@@ -122,24 +126,34 @@ export function LibraryToolbar({
           <SelectIcon className="size-4" strokeWidth={2.15} />
         </button>
         {selectMode ? (
-          <button
-            type="button"
-            className="h-10 shrink-0 border border-accent bg-accent px-3 text-sm font-semibold text-accent-fg disabled:opacity-40"
-            style={{ boxShadow: "var(--glow)" }}
-            disabled={!hasSelection || busyPlatform}
-            onClick={onDownloadSelected}
-          >
-            {busyPlatform ? "Queuing…" : "Download selected"}
-          </button>
+          <>
+            <button
+              type="button"
+              className="h-10 shrink-0 cursor-pointer border border-accent bg-accent px-3 text-sm font-semibold text-accent-fg disabled:cursor-not-allowed disabled:opacity-40"
+              style={{ boxShadow: "var(--glow)" }}
+              disabled={!hasSelection || busyPlatform}
+              onClick={onDownloadSelected}
+            >
+              {busyKind === "download" ? "Queuing…" : "Download selected"}
+            </button>
+            <button
+              type="button"
+              className="h-10 shrink-0 cursor-pointer border border-danger/50 bg-bg0 px-3 text-sm font-semibold text-danger disabled:cursor-not-allowed disabled:opacity-40"
+              disabled={!hasSelection || busyPlatform}
+              onClick={onDeleteSelected}
+            >
+              {busyKind === "delete" ? "Deleting…" : "Delete selected"}
+            </button>
+          </>
         ) : (
           <button
             type="button"
-            className="h-10 shrink-0 border border-accent bg-accent px-3 text-sm font-semibold text-accent-fg disabled:opacity-40"
+            className="h-10 shrink-0 cursor-pointer border border-accent bg-accent px-3 text-sm font-semibold text-accent-fg disabled:cursor-not-allowed disabled:opacity-40"
             style={{ boxShadow: "var(--glow)" }}
             disabled={!hasPlatform || busyPlatform}
             onClick={onDownloadPlatform}
           >
-            {busyPlatform ? "Queuing…" : "Download platform"}
+            {busyKind === "platform" ? "Queuing…" : "Download platform"}
           </button>
         )}
       </div>

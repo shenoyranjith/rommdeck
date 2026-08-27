@@ -46,8 +46,10 @@ export function LibraryPage() {
         }
         hasPlatform={!!lib.selected}
         busyPlatform={lib.busyPlatform}
+        busyKind={lib.busyKind}
         onSelectionButtonClick={lib.onSelectionButtonClick}
         onDownloadSelected={() => void lib.downloadSelected()}
+        onDeleteSelected={() => void lib.deleteSelected()}
         onDownloadPlatform={() => void lib.downloadPlatform()}
       />
 
@@ -99,8 +101,6 @@ export function LibraryPage() {
           selectedIds={lib.selectedIds}
           focusedId={lib.focusedId}
           onCardClick={lib.onCardClick}
-          onDownload={(rom) => void lib.downloadOne(rom)}
-          onDeleteLocal={(rom) => void lib.deleteLocal(rom)}
         />
 
         {lib.focusedId != null && (

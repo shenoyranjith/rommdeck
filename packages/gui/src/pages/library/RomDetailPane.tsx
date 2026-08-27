@@ -136,7 +136,7 @@ export function RomDetailPane({
               {!detail.downloaded ? (
                 <button
                   type="button"
-                  className="border border-accent bg-accent px-3 py-2 text-sm font-semibold text-accent-fg"
+                  className="cursor-pointer border border-accent bg-accent px-3 py-2 text-sm font-semibold text-accent-fg"
                   style={{ boxShadow: "var(--glow)" }}
                   onClick={() => onDownload(detail)}
                 >
@@ -145,7 +145,7 @@ export function RomDetailPane({
               ) : (
                 <button
                   type="button"
-                  className="border border-danger/50 px-3 py-2 text-sm text-danger"
+                  className="cursor-pointer border border-danger/50 px-3 py-2 text-sm text-danger"
                   onClick={() => onDeleteLocal(detail)}
                 >
                   Delete local

@@ -42,7 +42,10 @@ export function useLibraryData() {
   );
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [busyPlatform, setBusyPlatform] = useState(false);
+  const [busyKind, setBusyKind] = useState<
+    "platform" | "download" | "delete" | null
+  >(null);
+  const busyPlatform = busyKind !== null;
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -581,6 +584,117 @@ export function useLibraryData() {
     [detail?.id, selected, search],
   );
 
+  const applyDeletedIds = useCallback(
+    (ids: number[]) => {
+      if (ids.length === 0) return;
+      const idSet = new Set(ids);
+      const slug = selected?.slug;
+      if (slug) invalidateDownloaded(slug);
+      for (const id of ids) markCatalogRomDownloaded(selected?.id, id, false);
+      setDownloadedIds((prev) => {
+        const next = new Set(prev);
+        for (const id of ids) next.delete(id);
+        return next;
+      });
+      setDownloadedRoms((prev) => {
+        const next = prev.filter((r) => !idSet.has(r.id));
+        if (slug) cacheDownloadedRoms(slug, next);
+        return next;
+      });
+      setRoms((prev) => {
+        const next = prev.map((r) =>
+          idSet.has(r.id) ? { ...r, downloaded: false } : r,
+        );
+        if (selected)
+          setCatalog(
+            catalogCacheKey(selected.id, search),
+            next,
+            totalRef.current,
+          );
+        return next;
+      });
+      if (detail && idSet.has(detail.id)) {
+        setDetail({ ...detail, downloaded: false });
+      }
+    },
+    [selected, search, detail],
+  );
+
+  const deleteSelected = useCallback(async () => {
+    if (!selected) return;
+
+    let ids: number[] = [];
+
+    if (selectAll) {
+      if (filter === "missing") {
+        setMessage("No local files in the current selection");
+        return;
+      }
+      if (filter === "downloaded") {
+        ids = visible.map((r) => r.id);
+      } else if (!search) {
+        ids = Array.from(downloadedIds);
+      } else {
+        const query = catalogQueryFrom(selected, search);
+        let offset = 0;
+        let catalogTotal = Infinity;
+        while (offset < catalogTotal) {
+          const page = await fetchRomPage(query, { limit: 100, offset });
+          catalogTotal = page.total;
+          for (const rom of page.items) {
+            if (rom.downloaded || downloadedIds.has(rom.id)) ids.push(rom.id);
+          }
+          offset += page.items.length;
+          if (page.items.length === 0) break;
+        }
+      }
+    } else {
+      ids = visible
+        .filter((r) => selectedIds.has(r.id) && r.downloaded)
+        .map((r) => r.id);
+    }
+
+    if (ids.length === 0) {
+      setMessage("No local files in the current selection");
+      return;
+    }
+
+    if (
+      !confirm(
+        `Delete local files for ${ids.length} ROM${ids.length === 1 ? "" : "s"}? RomM is not touched.`,
+      )
+    ) {
+      return;
+    }
+
+    setBusyKind("delete");
+    setError(null);
+    try {
+      for (const id of ids) {
+        await getApi().deleteLocal(id);
+      }
+      applyDeletedIds(ids);
+      setMessage(
+        `Removed local copies of ${ids.length} ROM${ids.length === 1 ? "" : "s"}`,
+      );
+      exitSelectMode();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusyKind(null);
+    }
+  }, [
+    selected,
+    selectAll,
+    filter,
+    search,
+    visible,
+    downloadedIds,
+    selectedIds,
+    applyDeletedIds,
+    exitSelectMode,
+  ]);
+
   const downloadSelected = useCallback(async () => {
     if (!selected) return;
 
@@ -589,7 +703,7 @@ export function useLibraryData() {
 
       // No search: reuse platform enqueue (pages server-side, skips local copies).
       if (!search) {
-        setBusyPlatform(true);
+        setBusyKind("download");
         setError(null);
         try {
           const result = await getApi().enqueuePlatform(
@@ -611,13 +725,13 @@ export function useLibraryData() {
         } catch (e) {
           setError(e instanceof Error ? e.message : String(e));
         } finally {
-          setBusyPlatform(false);
+          setBusyKind(null);
         }
         return;
       }
 
       // With search: page the matching catalog, then enqueue.
-      setBusyPlatform(true);
+      setBusyKind("download");
       setError(null);
       try {
         const query = catalogQueryFrom(selected, search);
@@ -646,7 +760,7 @@ export function useLibraryData() {
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
       } finally {
-        setBusyPlatform(false);
+        setBusyKind(null);
       }
       return;
     }
@@ -672,7 +786,7 @@ export function useLibraryData() {
 
   const downloadPlatform = useCallback(async () => {
     if (!selected) return;
-    setBusyPlatform(true);
+    setBusyKind("platform");
     setError(null);
     try {
       const result = await getApi().enqueuePlatform(selected.id, selected.slug);
@@ -691,7 +805,7 @@ export function useLibraryData() {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setBusyPlatform(false);
+      setBusyKind(null);
     }
   }, [selected]);
 
@@ -723,6 +837,7 @@ export function useLibraryData() {
     error,
     message,
     busyPlatform,
+    busyKind,
     scrollRef,
     sentinelRef,
     selectPlatform,
@@ -732,6 +847,7 @@ export function useLibraryData() {
     closeDetail,
     downloadOne,
     deleteLocal,
+    deleteSelected,
     downloadSelected,
     downloadPlatform,
   };

@@ -24,8 +24,6 @@ export function RomBrowser({
   selectedIds,
   focusedId,
   onCardClick,
-  onDownload,
-  onDeleteLocal,
 }: {
   platform: Platform | null;
   viewMode: LibraryViewMode;
@@ -46,8 +44,6 @@ export function RomBrowser({
   selectedIds: Set<number>;
   focusedId: number | null;
   onCardClick: (rom: RomItem) => void;
-  onDownload: (rom: RomItem) => void;
-  onDeleteLocal: (rom: RomItem) => void;
 }) {
   const footer = (
     <div
@@ -122,8 +118,6 @@ export function RomBrowser({
               selectedIds={selectedIds}
               focusedId={focusedId}
               onCardClick={onCardClick}
-              onDownload={onDownload}
-              onDeleteLocal={onDeleteLocal}
               footer={footer}
             />
           ) : (
@@ -134,8 +128,6 @@ export function RomBrowser({
               selectedIds={selectedIds}
               focusedId={focusedId}
               onCardClick={onCardClick}
-              onDownload={onDownload}
-              onDeleteLocal={onDeleteLocal}
               footer={footer}
             />
           )}

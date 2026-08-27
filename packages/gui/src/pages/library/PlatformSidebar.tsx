@@ -59,15 +59,15 @@ export function PlatformSidebar({
                 className={cn(
                   "flex w-full items-center gap-2 border px-2.5 py-2 text-left text-sm transition-colors",
                   active
-                    ? "border-accent bg-transparent text-text"
-                    : "border-transparent text-text hover:border-line hover:bg-bg2/50",
+                    ? "border-accent border-l-[6px] bg-accent/15 font-semibold text-accent"
+                    : "border-transparent text-text hover:bg-bg2/60",
                 )}
                 onClick={() => onSelectPlatform(p)}
               >
                 <span
                   className={cn(
                     "grid size-6 shrink-0 place-items-center overflow-hidden border",
-                    active ? "border-accent/60 bg-bg0" : "border-line bg-bg0",
+                    active ? "border-accent/70 bg-bg0" : "border-line bg-bg0",
                   )}
                 >
                   {p.logoUrl ? (

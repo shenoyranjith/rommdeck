@@ -12,16 +12,12 @@ const RomListRow = memo(function RomListRow({
   selected,
   focused,
   onCardClick,
-  onDownload,
-  onDeleteLocal,
 }: {
   rom: RomItem;
   selectMode: boolean;
   selected: boolean;
   focused: boolean;
   onCardClick: (rom: RomItem) => void;
-  onDownload: (rom: RomItem) => void;
-  onDeleteLocal: (rom: RomItem) => void;
 }) {
   const cover = rom.coverUrl || rom.path_cover_small || rom.url_cover;
   const platformLabel =
@@ -66,7 +62,7 @@ const RomListRow = memo(function RomListRow({
             alt=""
             decoding="async"
             draggable={false}
-            className="h-full w-full object-cover"
+            className="h-full w-full object-fill"
           />
         ) : (
           <div className="grid h-full place-items-center text-accent/70">
@@ -84,8 +80,10 @@ const RomListRow = memo(function RomListRow({
 
       <span
         className={cn(
-          "inline-flex shrink-0 items-center gap-1 text-[10px] font-semibold tracking-wide uppercase",
-          rom.downloaded ? "text-accent" : "text-warn",
+          "inline-flex h-8 shrink-0 items-center gap-1.5 border px-3 text-[10px] font-semibold tracking-wide uppercase",
+          rom.downloaded
+            ? "border-accent/70 text-accent"
+            : "border-warn/60 text-warn",
         )}
       >
         {rom.downloaded ? (
@@ -95,28 +93,6 @@ const RomListRow = memo(function RomListRow({
         )}
         {rom.downloaded ? "Downloaded" : "Missing"}
       </span>
-
-      {!selectMode && (
-        <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
-          {!rom.downloaded ? (
-            <button
-              type="button"
-              className="h-8 border border-accent bg-accent/15 px-3 text-xs font-medium text-accent"
-              onClick={() => onDownload(rom)}
-            >
-              Download
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="h-8 border border-danger/50 px-3 text-xs text-danger"
-              onClick={() => onDeleteLocal(rom)}
-            >
-              Delete local
-            </button>
-          )}
-        </div>
-      )}
     </div>
   );
 });
@@ -129,8 +105,6 @@ export function RomList({
   focusedId,
   footer,
   onCardClick,
-  onDownload,
-  onDeleteLocal,
 }: {
   roms: RomItem[];
   scrollRef: RefObject<HTMLDivElement | null>;
@@ -139,8 +113,6 @@ export function RomList({
   focusedId: number | null;
   footer?: ReactNode;
   onCardClick: (rom: RomItem) => void;
-  onDownload: (rom: RomItem) => void;
-  onDeleteLocal: (rom: RomItem) => void;
 }) {
   const virtualizer = useVirtualizer({
     count: roms.length,
@@ -177,8 +149,6 @@ export function RomList({
                 selected={selectedIds.has(rom.id)}
                 focused={!selectMode && focusedId === rom.id}
                 onCardClick={onCardClick}
-                onDownload={onDownload}
-                onDeleteLocal={onDeleteLocal}
               />
             </div>
           );

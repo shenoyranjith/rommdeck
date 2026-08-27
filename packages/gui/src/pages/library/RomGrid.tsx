@@ -22,10 +22,10 @@ function columnsForWidth(width: number): number {
   return Math.max(1, Math.floor((width + GAP) / (MIN_CARD_WIDTH + GAP)));
 }
 
-/** Cover (3:4) + fixed body (title, badge, optional action). */
-function rowHeight(cardWidth: number, selectMode: boolean): number {
+/** Cover (3:4) + fixed body (title + status). */
+function rowHeight(cardWidth: number): number {
   const cover = cardWidth * (4 / 3);
-  const body = selectMode ? 88 : 128;
+  const body = 88;
   return Math.ceil(cover + body + GAP);
 }
 
@@ -35,16 +35,12 @@ const RomCard = memo(function RomCard({
   selected,
   focused,
   onCardClick,
-  onDownload,
-  onDeleteLocal,
 }: {
   rom: RomGridItem;
   selectMode: boolean;
   selected: boolean;
   focused: boolean;
   onCardClick: (rom: RomGridItem) => void;
-  onDownload: (rom: RomGridItem) => void;
-  onDeleteLocal: (rom: RomGridItem) => void;
 }) {
   const cover = rom.coverUrl || rom.path_cover_small || rom.url_cover;
   return (
@@ -73,7 +69,7 @@ const RomCard = memo(function RomCard({
             alt=""
             decoding="async"
             draggable={false}
-            className="h-full w-full object-cover"
+            className="h-full w-full object-fill"
           />
         ) : (
           <div className="grid h-full place-items-center gap-1 text-accent">
@@ -93,8 +89,10 @@ const RomCard = memo(function RomCard({
         </div>
         <span
           className={cn(
-            "inline-flex h-5 w-fit items-center gap-1 text-[10px] font-semibold tracking-wide uppercase",
-            rom.downloaded ? "text-accent" : "text-warn",
+            "inline-flex h-8 w-full items-center justify-center gap-1.5 border text-[10px] font-semibold tracking-wide uppercase",
+            rom.downloaded
+              ? "border-accent/70 text-accent"
+              : "border-warn/60 text-warn",
           )}
         >
           {rom.downloaded ? (
@@ -104,27 +102,6 @@ const RomCard = memo(function RomCard({
           )}
           {rom.downloaded ? "Downloaded" : "Missing"}
         </span>
-        {!selectMode && (
-          <div className="flex gap-1.5" onClick={(e) => e.stopPropagation()}>
-            {!rom.downloaded ? (
-              <button
-                type="button"
-                className="h-8 flex-1 border border-accent bg-accent/15 px-2 text-xs font-medium text-accent"
-                onClick={() => onDownload(rom)}
-              >
-                Download
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="h-8 flex-1 border border-danger/50 px-2 text-xs text-danger"
-                onClick={() => onDeleteLocal(rom)}
-              >
-                Delete local
-              </button>
-            )}
-          </div>
-        )}
       </div>
     </article>
   );
@@ -138,8 +115,6 @@ export function RomGrid({
   focusedId,
   footer,
   onCardClick,
-  onDownload,
-  onDeleteLocal,
 }: {
   roms: RomGridItem[];
   scrollRef: RefObject<HTMLDivElement | null>;
@@ -148,8 +123,6 @@ export function RomGrid({
   focusedId: number | null;
   footer?: ReactNode;
   onCardClick: (rom: RomGridItem) => void;
-  onDownload: (rom: RomGridItem) => void;
-  onDeleteLocal: (rom: RomGridItem) => void;
 }) {
   const [width, setWidth] = useState(0);
 
@@ -169,10 +142,7 @@ export function RomGrid({
   const cols = useMemo(() => columnsForWidth(width), [width]);
   const cardWidth =
     width <= 0 ? MIN_CARD_WIDTH : (width - GAP * (cols - 1)) / cols;
-  const estimate = useMemo(
-    () => rowHeight(cardWidth, selectMode),
-    [cardWidth, selectMode],
-  );
+  const estimate = useMemo(() => rowHeight(cardWidth), [cardWidth]);
   const rowCount = cols > 0 ? Math.ceil(roms.length / cols) : 0;
 
   const estimateSize = useCallback(() => estimate, [estimate]);
@@ -224,8 +194,6 @@ export function RomGrid({
                   selected={selectedIds.has(rom.id)}
                   focused={!selectMode && focusedId === rom.id}
                   onCardClick={onCardClick}
-                  onDownload={onDownload}
-                  onDeleteLocal={onDeleteLocal}
                 />
               ))}
             </div>
