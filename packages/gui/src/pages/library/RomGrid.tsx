@@ -10,18 +10,12 @@ import {
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { cn } from "../../lib/cn";
 import { IconCheck } from "../../components/icons";
+import type { RomItem } from "./types";
 
 const MIN_CARD_WIDTH = 150;
 const GAP = 12;
 
-export interface RomGridItem {
-  id: number;
-  name: string;
-  coverUrl?: string | null;
-  path_cover_small?: string | null;
-  url_cover?: string | null;
-  downloaded?: boolean;
-}
+export type RomGridItem = RomItem;
 
 function columnsForWidth(width: number): number {
   if (width <= 0) return 1;

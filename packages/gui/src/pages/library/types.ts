@@ -25,3 +25,7 @@ export interface RomItem {
   coverUrlSmall?: string | null;
   downloaded?: boolean;
 }
+
+export type StatusFilter = "all" | "downloaded" | "missing";
+
+export const PAGE_SIZE = 48;
