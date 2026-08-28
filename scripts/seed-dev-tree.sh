@@ -29,7 +29,8 @@ if [[ ! -f "$MAIN_CFG" ]]; then
     "configPath": "$EXPANDED",
     "romsPath": "$ROOT/roms",
     "savesPath": "$ROOT/saves",
-    "statesPath": "$ROOT/states"
+    "statesPath": "$ROOT/states",
+    "syncMetadataOnDownload": true
   },
   "sync": {
     "enabled": false,

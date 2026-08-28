@@ -29,6 +29,7 @@ import {
   ensureDevice,
   runSyncSession,
   rommSlugToEsdeFolder,
+  loadBundledPlatformMap,
   romHasEsdeMetadata,
   type RommDeckConfig,
   type RommRom,
@@ -189,6 +190,7 @@ function getDownloadManager(): DownloadManager {
       rdHomePath: paths.rdHomePath,
       downloadedMediaPath: paths.downloadedMediaPath,
       platformMapOverrides: cfg.platformMapOverrides,
+      syncMetadataOnDownload: cfg.retrodeck.syncMetadataOnDownload,
     });
     log.download("DownloadManager initialized", {
       romsPath: paths.romsPath,
@@ -424,6 +426,7 @@ function registerIpc(): void {
   ipcMain.removeHandler("romm:rom");
   ipcMain.removeHandler("paths:retrodeck");
   ipcMain.removeHandler("platform:mapFolder");
+  ipcMain.removeHandler("platform:bundledMap");
   ipcMain.removeHandler("downloads:enqueue");
   ipcMain.removeHandler("downloads:enqueueMany");
   ipcMain.removeHandler("downloads:enqueuePlatform");
@@ -442,6 +445,7 @@ function registerIpc(): void {
   ipcMain.removeHandler("daemon:systemctl");
   ipcMain.removeHandler("sync:now");
   ipcMain.removeHandler("shell:openPath");
+  ipcMain.removeHandler("shell:openExternal");
   ipcMain.removeHandler("window:minimize");
   ipcMain.removeHandler("window:maximize");
   ipcMain.removeHandler("window:close");
@@ -585,6 +589,8 @@ function registerIpc(): void {
     const cfg = loadConfig();
     return rommSlugToEsdeFolder(slug, cfg.platformMapOverrides);
   });
+
+  ipcMain.handle("platform:bundledMap", () => loadBundledPlatformMap());
 
   ipcMain.handle("downloads:enqueue", async (_e, romId: number, platformSlug: string) => {
     const cfg = loadConfig();
@@ -791,6 +797,23 @@ function registerIpc(): void {
   });
 
   ipcMain.handle("shell:openPath", (_e, p: string) => shell.openPath(p));
+
+  ipcMain.handle("shell:openExternal", async (_e, raw: unknown) => {
+    if (typeof raw !== "string" || !raw.trim()) {
+      return { ok: false, error: "URL is required" };
+    }
+    let parsed: URL;
+    try {
+      parsed = new URL(raw.trim());
+    } catch {
+      return { ok: false, error: "Invalid URL" };
+    }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return { ok: false, error: "Only http and https URLs are allowed" };
+    }
+    await shell.openExternal(parsed.href);
+    return { ok: true };
+  });
 }
 
 function installRommAssetAuth(): void {

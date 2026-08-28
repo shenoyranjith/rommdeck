@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { getApi } from "../../api";
 import { useNotification } from "../../components/NotificationProvider";
+import { useRommConnection } from "../../components/RommConnectionProvider";
 import {
   applyUiTheme,
   applyUiCrt,
@@ -38,9 +39,8 @@ function normalizeUi(
 export function SettingsPage() {
   const [cfg, setCfg] = useState<SettingsConfig | null>(null);
   const [paths, setPaths] = useState<PathsInfo | null>(null);
-  const [overridesText, setOverridesText] = useState("{}");
-  const [overridesError, setOverridesError] = useState<string | null>(null);
   const { notifyOk, notifyError, clearNotification } = useNotification();
+  const { status: connectionStatus, checkConnection } = useRommConnection();
   const [testing, setTesting] = useState(false);
   const [activeSection, setActiveSection] =
     useState<SettingsSectionId>("appearance");
@@ -55,7 +55,6 @@ export function SettingsPage() {
         scanlines: ui.scanlines,
         scanlineStrength: ui.scanlineStrength,
       });
-      setOverridesText(JSON.stringify(c.platformMapOverrides ?? {}, null, 2));
       setPaths((await getApi().getRetroDeckPaths()) as PathsInfo);
     })();
   }, []);
@@ -77,29 +76,6 @@ export function SettingsPage() {
   );
 
   const debouncedPersist = useDebouncedCallback(persistPartial, 400);
-
-  const debouncedOverridesPersist = useDebouncedCallback(async (text: string) => {
-    try {
-      const platformMapOverrides = JSON.parse(text) as Record<string, string>;
-      if (
-        platformMapOverrides === null ||
-        typeof platformMapOverrides !== "object" ||
-        Array.isArray(platformMapOverrides)
-      ) {
-        throw new Error("Platform map overrides must be a JSON object");
-      }
-      setOverridesError(null);
-      await persistPartial({ platformMapOverrides });
-    } catch (e) {
-      if (e instanceof SyntaxError) {
-        setOverridesError("Invalid JSON");
-      } else {
-        setOverridesError(
-          e instanceof Error ? e.message : "Invalid platform map overrides",
-        );
-      }
-    }
-  }, 500);
 
   if (!cfg) {
     return (
@@ -150,9 +126,26 @@ export function SettingsPage() {
     debouncedPersist({ retrodeck });
   };
 
-  const updateOverridesText = (text: string) => {
-    setOverridesText(text);
-    debouncedOverridesPersist(text);
+  const setSyncMetadataOnDownload = async (syncMetadataOnDownload: boolean) => {
+    const retrodeck = { ...cfg.retrodeck, syncMetadataOnDownload };
+    setCfg({ ...cfg, retrodeck });
+    await persistPartial({ retrodeck });
+  };
+
+  const savePlatformMapOverrides = async (
+    platformMapOverrides: Record<string, string>,
+  ) => {
+    try {
+      const next = (await getApi().saveConfig({
+        platformMapOverrides,
+      })) as SettingsConfig;
+      setCfg({ ...next, ui: normalizeUi(next.ui) });
+      clearNotification();
+      notifyOk("Platform map saved");
+    } catch (e) {
+      notifyError(e instanceof Error ? e.message : String(e));
+      throw e;
+    }
   };
 
   const updateSync = (sync: SettingsConfig["sync"]) => {
@@ -165,10 +158,12 @@ export function SettingsPage() {
     clearNotification();
     try {
       await persistPartial({ romm: cfg.romm });
-      const result = await getApi().testConnection();
-      if (result.ok)
-        notifyOk(`Connected — ${result.platforms ?? 0} platforms`);
-      else notifyError(result.error ?? "Connection failed");
+      const result = await checkConnection();
+      if (result.state === "ok") {
+        notifyOk(`Connected — ${result.platforms} platforms`);
+      } else if (result.state === "error") {
+        notifyError(result.error);
+      }
     } catch (e) {
       notifyError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -193,8 +188,11 @@ export function SettingsPage() {
         return (
           <RommSection
             cfg={cfg}
+            connectionStatus={connectionStatus}
+            platformMapOverrides={cfg.platformMapOverrides ?? {}}
             onChange={updateRomm}
             onTest={() => void test()}
+            onSavePlatformMapOverrides={savePlatformMapOverrides}
             testing={testing}
           />
         );
@@ -203,10 +201,10 @@ export function SettingsPage() {
           <RetrodeckSection
             cfg={cfg}
             paths={paths}
-            overridesText={overridesText}
-            overridesError={overridesError}
             onRetrodeckChange={updateRetrodeck}
-            onOverridesChange={updateOverridesText}
+            onSyncMetadataChange={(enabled) =>
+              void setSyncMetadataOnDownload(enabled)
+            }
           />
         );
       case "auto-sync":
@@ -226,7 +224,7 @@ export function SettingsPage() {
           onSelect={setActiveSection}
         />
 
-        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto pr-1">
+        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto pb-1 pr-1">
           {pane}
         </div>
       </div>

@@ -7,6 +7,7 @@ import {
   getDownloadedIds,
   getDownloadedRoms,
   invalidateDownloaded,
+  invalidateAllLibraryCaches,
   markCatalogRomDownloaded,
   onInventoryChange,
   setCatalog,
@@ -50,6 +51,8 @@ export function useLibraryData() {
   const [busyKind, setBusyKind] = useState<
     "platform" | "download" | "delete" | null
   >(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
   const busyPlatform = busyKind !== null;
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -168,7 +171,7 @@ export function useLibraryData() {
     } finally {
       if (qid === queryIdRef.current) setLoading(false);
     }
-  }, [selected, search]);
+  }, [selected, search, refreshKey]);
 
   useEffect(() => {
     setSelectAll(false);
@@ -205,7 +208,7 @@ export function useLibraryData() {
     return () => {
       cancelled = true;
     };
-  }, [selected?.slug]);
+  }, [selected?.slug, refreshKey]);
 
   useEffect(() => {
     return onInventoryChange((event) => {
@@ -290,7 +293,7 @@ export function useLibraryData() {
         if (qid === downloadedQueryRef.current) setLoadingDownloaded(false);
       }
     })();
-  }, [filter, selected?.slug]);
+  }, [filter, selected?.slug, refreshKey]);
 
   const loadMore = useCallback(async () => {
     if (!hasMore || loading || loadingMore || loadingAll) return;
@@ -877,6 +880,27 @@ export function useLibraryData() {
     }
   }, [selected]);
 
+  const refreshLibrary = useCallback(async () => {
+    setRefreshing(true);
+    clearNotification();
+    try {
+      invalidateAllLibraryCaches();
+      const list = (await getApi().getPlatforms()) as Platform[];
+      setPlatforms(list);
+      setSelected((prev) => {
+        if (prev && list.some((p) => p.id === prev.id)) return prev;
+        const withRoms = list.filter((p) => (p.rom_count ?? 0) > 0);
+        return withRoms[0] ?? list[0] ?? null;
+      });
+      setRefreshKey((key) => key + 1);
+      notifyOk("Library refreshed");
+    } catch (e) {
+      notifyError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRefreshing(false);
+    }
+  }, [clearNotification, notifyError, notifyOk]);
+
   return {
     platforms,
     visiblePlatforms,
@@ -904,6 +928,8 @@ export function useLibraryData() {
     rangeLabel,
     busyPlatform,
     busyKind,
+    refreshing,
+    refreshLibrary,
     scrollRef,
     sentinelRef,
     selectPlatform,

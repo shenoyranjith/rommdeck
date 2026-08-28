@@ -17,6 +17,7 @@ export interface RommDeckApi {
   getRom: (romId: number) => Promise<unknown>;
   getRetroDeckPaths: () => Promise<unknown>;
   mapFolder: (slug: string) => Promise<string>;
+  getBundledPlatformMap: () => Promise<Record<string, string>>;
   enqueueDownload: (romId: number, platformSlug: string) => Promise<unknown>;
   enqueueMany: (items: { romId: number; platformSlug: string }[]) => Promise<unknown[]>;
   enqueuePlatform: (
@@ -41,6 +42,7 @@ export interface RommDeckApi {
   systemctl: (action: "enable" | "disable" | "start" | "stop" | "status") => Promise<{ ok: boolean; output: string }>;
   syncNow: () => Promise<unknown>;
   openPath: (p: string) => Promise<string>;
+  openExternal: (url: string) => Promise<{ ok: boolean; error?: string }>;
   getAppVersion: () => Promise<string>;
   setWindowBackground: (color: string) => Promise<void>;
   windowMinimize: () => Promise<void>;
@@ -69,6 +71,7 @@ const api: RommDeckApi = {
   getRom: (romId) => ipcRenderer.invoke("romm:rom", romId),
   getRetroDeckPaths: () => ipcRenderer.invoke("paths:retrodeck"),
   mapFolder: (slug) => ipcRenderer.invoke("platform:mapFolder", slug),
+  getBundledPlatformMap: () => ipcRenderer.invoke("platform:bundledMap"),
   enqueueDownload: (romId, platformSlug) =>
     ipcRenderer.invoke("downloads:enqueue", romId, platformSlug),
   enqueueMany: (items) => ipcRenderer.invoke("downloads:enqueueMany", items),
@@ -104,6 +107,7 @@ const api: RommDeckApi = {
   systemctl: (action) => ipcRenderer.invoke("daemon:systemctl", action),
   syncNow: () => ipcRenderer.invoke("sync:now"),
   openPath: (p) => ipcRenderer.invoke("shell:openPath", p),
+  openExternal: (url) => ipcRenderer.invoke("shell:openExternal", url),
   getAppVersion: () => ipcRenderer.invoke("app:getVersion"),
   setWindowBackground: (color) => ipcRenderer.invoke("window:setBackground", color),
   windowMinimize: () => ipcRenderer.invoke("window:minimize"),

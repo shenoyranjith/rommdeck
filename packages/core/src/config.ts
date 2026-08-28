@@ -19,6 +19,8 @@ export interface RetroDeckConfig {
   romsPath: string;
   savesPath: string;
   statesPath: string;
+  /** Write ES-DE gamelist + media after each ROM download */
+  syncMetadataOnDownload: boolean;
 }
 
 export interface SyncConfig {
@@ -58,6 +60,7 @@ export const DEFAULT_CONFIG: RommDeckConfig = {
     romsPath: "",
     savesPath: "",
     statesPath: "",
+    syncMetadataOnDownload: true,
   },
   sync: {
     enabled: false,
@@ -129,6 +132,15 @@ export function loadConfig(): RommDeckConfig {
       ui: {
         ...cfg.ui,
         scanlineStrength: Math.min(100, Math.max(0, Math.round(strength))),
+      },
+    };
+  }
+  if (typeof cfg.retrodeck?.syncMetadataOnDownload !== "boolean") {
+    cfg = {
+      ...cfg,
+      retrodeck: {
+        ...cfg.retrodeck,
+        syncMetadataOnDownload: DEFAULT_CONFIG.retrodeck.syncMetadataOnDownload,
       },
     };
   }

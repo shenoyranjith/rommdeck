@@ -2,6 +2,7 @@ import { cn } from "../../lib/cn";
 import {
   IconLayoutGrid,
   IconLayoutList,
+  IconRefresh,
   IconSearch,
   IconSelectAll,
   IconSelectEmpty,
@@ -26,6 +27,8 @@ export function LibraryToolbar({
   onDownloadSelected,
   onDeleteSelected,
   onDownloadPlatform,
+  onRefreshLibrary,
+  refreshing,
 }: {
   viewMode: LibraryViewMode;
   onViewModeChange: (mode: LibraryViewMode) => void;
@@ -41,6 +44,8 @@ export function LibraryToolbar({
   onDownloadSelected: () => void;
   onDeleteSelected: () => void;
   onDownloadPlatform: () => void;
+  onRefreshLibrary: () => void;
+  refreshing: boolean;
 }) {
   const SelectIcon =
     selectionState === "all"
@@ -146,15 +151,30 @@ export function LibraryToolbar({
             </button>
           </>
         ) : (
-          <button
-            type="button"
-            className="h-10 shrink-0 cursor-pointer border border-accent bg-accent px-3 text-sm font-semibold text-accent-fg disabled:cursor-not-allowed disabled:opacity-40"
-            style={{ boxShadow: "var(--glow)" }}
-            disabled={!hasPlatform || busyPlatform}
-            onClick={onDownloadPlatform}
-          >
-            {busyKind === "platform" ? "Queuing…" : "Download platform"}
-          </button>
+          <>
+            <button
+              type="button"
+              className="h-10 shrink-0 cursor-pointer border border-accent bg-accent px-3 text-sm font-semibold text-accent-fg disabled:cursor-not-allowed disabled:opacity-40"
+              style={{ boxShadow: "var(--glow)" }}
+              disabled={!hasPlatform || busyPlatform}
+              onClick={onDownloadPlatform}
+            >
+              {busyKind === "platform" ? "Queuing…" : "Download platform"}
+            </button>
+            <button
+              type="button"
+              className="inline-flex h-10 w-10 shrink-0 items-center justify-center border border-accent/70 bg-bg0 text-text transition-colors hover:border-accent disabled:cursor-not-allowed disabled:opacity-40"
+              disabled={refreshing || busyPlatform}
+              onClick={onRefreshLibrary}
+              aria-label="Refresh library"
+              title="Refresh library from RomM"
+            >
+              <IconRefresh
+                className={cn("size-4", refreshing && "animate-spin")}
+                strokeWidth={2.15}
+              />
+            </button>
+          </>
         )}
       </div>
     </div>

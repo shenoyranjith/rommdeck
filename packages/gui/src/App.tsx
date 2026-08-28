@@ -19,6 +19,7 @@ import { applyUiTheme, applyUiCrt, isUiTheme, DEFAULT_UI_THEME, readStoredUiCrt,
 import { useDownloadInventorySync } from "./hooks/useDownloadInventorySync";
 import { ConfirmProvider } from "./components/ConfirmProvider";
 import { NotificationProvider, NotificationAnchor } from "./components/NotificationProvider";
+import { RommConnectionProvider } from "./components/RommConnectionProvider";
 
 const NAV = [
   { to: "/", end: true, label: "Library", Icon: IconLibrary },
@@ -71,6 +72,7 @@ export function App() {
   return (
     <ConfirmProvider>
       <NotificationProvider>
+      <RommConnectionProvider>
       <div className="relative h-full w-full min-h-0 min-w-0 overflow-hidden bg-bg0 text-text">
       {crt.scanlines && (
         <div
@@ -145,6 +147,7 @@ export function App() {
         </div>
       </div>
       </div>
+      </RommConnectionProvider>
       </NotificationProvider>
     </ConfirmProvider>
   );

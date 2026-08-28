@@ -51,6 +51,8 @@ export function LibraryPage() {
         onDownloadSelected={() => void lib.downloadSelected()}
         onDeleteSelected={() => void lib.deleteSelected()}
         onDownloadPlatform={() => void lib.downloadPlatform()}
+        onRefreshLibrary={() => void lib.refreshLibrary()}
+        refreshing={lib.refreshing}
       />
 
       <div

@@ -7,6 +7,7 @@ export interface SettingsConfig {
     romsPath: string;
     savesPath: string;
     statesPath: string;
+    syncMetadataOnDownload: boolean;
   };
   sync: {
     enabled: boolean;

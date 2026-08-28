@@ -58,6 +58,13 @@ export function invalidateDownloaded(slug: string): void {
   downloadedRomsBySlug.delete(slug);
 }
 
+/** Clear all in-memory library caches (catalog + downloaded lookups). */
+export function invalidateAllLibraryCaches(): void {
+  catalogByKey.clear();
+  downloadedRomsBySlug.clear();
+  downloadedIdsBySlug.clear();
+}
+
 export function onInventoryChange(
   listener: (event: InventoryChangeEvent) => void,
 ): () => void {

@@ -51,6 +51,7 @@ export interface DownloadManagerOptions {
   rdHomePath?: string;
   downloadedMediaPath?: string;
   platformMapOverrides?: Record<string, string>;
+  syncMetadataOnDownload?: boolean;
 }
 
 interface VerifiedFile {
@@ -802,12 +803,19 @@ export class DownloadManager extends EventEmitter {
         })),
       });
 
-      if (rdHomePath) {
+      if (rdHomePath && this.opts.syncMetadataOnDownload !== false) {
         this.scheduleMetadata(job);
         return true;
       }
 
-      log.esde("metadata skipped (no rdHomePath)", { romId: job.romId });
+      job.status = "done";
+      this.emit("job", job);
+      log.esde(
+        this.opts.syncMetadataOnDownload === false
+          ? "metadata skipped (disabled in settings)"
+          : "metadata skipped (no rdHomePath)",
+        { romId: job.romId },
+      );
       log.download("runJob complete", {
         jobId: job.id,
         romId: job.romId,

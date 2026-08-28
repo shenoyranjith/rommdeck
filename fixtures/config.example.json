@@ -7,7 +7,8 @@
     "configPath": "",
     "romsPath": "",
     "savesPath": "",
-    "statesPath": ""
+    "statesPath": "",
+    "syncMetadataOnDownload": true
   },
   "sync": {
     "enabled": false,
