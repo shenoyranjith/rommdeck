@@ -16,10 +16,12 @@ import {
 import type { Platform, RomItem, StatusFilter } from "./types";
 import { useActiveDownloads } from "../../hooks/useActiveDownloads";
 import { useConfirm } from "../../components/ConfirmProvider";
+import { useNotification } from "../../components/NotificationProvider";
 
 export function useLibraryData() {
   const activeDownloads = useActiveDownloads();
   const confirm = useConfirm();
+  const { notifyOk, notifyError, clearNotification } = useNotification();
   const [platforms, setPlatforms] = useState<Platform[]>([]);
   const [selected, setSelected] = useState<Platform | null>(null);
   const [roms, setRoms] = useState<RomItem[]>([]);
@@ -45,8 +47,6 @@ export function useLibraryData() {
   const [downloadedIds, setDownloadedIds] = useState<Set<number>>(
     () => new Set(),
   );
-  const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
   const [busyKind, setBusyKind] = useState<
     "platform" | "download" | "delete" | null
   >(null);
@@ -79,7 +79,7 @@ export function useLibraryData() {
         const withRoms = list.filter((p) => (p.rom_count ?? 0) > 0);
         setSelected(withRoms[0] ?? list[0] ?? null);
       } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
+        notifyError(e instanceof Error ? e.message : String(e));
       }
     })();
   }, []);
@@ -117,7 +117,7 @@ export function useLibraryData() {
     setDetailError(null);
     setLoadingMore(false);
     setLoadingAll(false);
-    setError(null);
+    clearNotification();
     scrollRef.current?.scrollTo(0, 0);
 
     if (!selected && !search) {
@@ -162,7 +162,7 @@ export function useLibraryData() {
       });
     } catch (e) {
       if (qid !== queryIdRef.current) return;
-      setError(e instanceof Error ? e.message : String(e));
+      notifyError(e instanceof Error ? e.message : String(e));
       setRoms([]);
       setTotal(0);
     } finally {
@@ -273,7 +273,7 @@ export function useLibraryData() {
 
     const qid = ++downloadedQueryRef.current;
     setLoadingDownloaded(true);
-    setError(null);
+    clearNotification();
     scrollRef.current?.scrollTo(0, 0);
     void (async () => {
       try {
@@ -284,7 +284,7 @@ export function useLibraryData() {
         setDownloadedIds(new Set(items.map((r) => r.id)));
       } catch (e) {
         if (qid !== downloadedQueryRef.current) return;
-        setError(e instanceof Error ? e.message : String(e));
+        notifyError(e instanceof Error ? e.message : String(e));
         setDownloadedRoms([]);
       } finally {
         if (qid === downloadedQueryRef.current) setLoadingDownloaded(false);
@@ -299,7 +299,7 @@ export function useLibraryData() {
     const key = catalogCacheKey(selected?.id, search);
     const offset = roms.length;
     setLoadingMore(true);
-    setError(null);
+    clearNotification();
     try {
       const { items, total: nextTotal } = await fetchRomPage(
         catalogQueryFrom(selected, search),
@@ -325,7 +325,7 @@ export function useLibraryData() {
       totalRef.current = nextTotal;
     } catch (e) {
       if (qid !== queryIdRef.current) return;
-      setError(e instanceof Error ? e.message : String(e));
+      notifyError(e instanceof Error ? e.message : String(e));
     } finally {
       if (qid === queryIdRef.current) setLoadingMore(false);
     }
@@ -352,7 +352,7 @@ export function useLibraryData() {
     const query = catalogQueryFrom(selected, search);
     let cancelled = false;
     setLoadingAll(true);
-    setError(null);
+    clearNotification();
 
     void (async () => {
       try {
@@ -390,7 +390,7 @@ export function useLibraryData() {
         }
       } catch (e) {
         if (!cancelled && qid === queryIdRef.current) {
-          setError(e instanceof Error ? e.message : String(e));
+          notifyError(e instanceof Error ? e.message : String(e));
         }
       } finally {
         if (!cancelled && qid === queryIdRef.current) setLoadingAll(false);
@@ -596,7 +596,7 @@ export function useLibraryData() {
       const queueStatus = activeDownloads.get(rom.id);
       if (queueStatus) return;
       await getApi().enqueueDownload(rom.id, slug);
-      setMessage(`Queued ${rom.name}`);
+      notifyOk(`Queued ${rom.name}`);
     },
     [selected?.slug, activeDownloads],
   );
@@ -639,7 +639,7 @@ export function useLibraryData() {
         return next;
       });
       if (detail?.id === rom.id) setDetail({ ...rom, downloaded: false });
-      setMessage(`Removed local copy of ${rom.name}`);
+      notifyOk(`Removed local copy of ${rom.name}`);
     },
     [detail?.id, selected, search, confirm],
   );
@@ -687,7 +687,7 @@ export function useLibraryData() {
 
     if (selectAll) {
       if (filter === "missing") {
-        setMessage("No local files in the current selection");
+        notifyOk("No local files in the current selection");
         return;
       }
       if (filter === "downloaded") {
@@ -715,7 +715,7 @@ export function useLibraryData() {
     }
 
     if (ids.length === 0) {
-      setMessage("No local files in the current selection");
+      notifyOk("No local files in the current selection");
       return;
     }
 
@@ -730,18 +730,18 @@ export function useLibraryData() {
     if (!ok) return;
 
     setBusyKind("delete");
-    setError(null);
+    clearNotification();
     try {
       for (const id of ids) {
         await getApi().deleteLocal(id);
       }
       applyDeletedIds(ids);
-      setMessage(
+      notifyOk(
         `Removed local copies of ${ids.length} ROM${ids.length === 1 ? "" : "s"}`,
       );
       exitSelectMode();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      notifyError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusyKind(null);
     }
@@ -767,26 +767,26 @@ export function useLibraryData() {
       // No search: reuse platform enqueue (pages server-side, skips local copies).
       if (!search) {
         setBusyKind("download");
-        setError(null);
+        clearNotification();
         try {
           const result = await getApi().enqueuePlatform(
             selected.id,
             selected.slug,
           );
           if (result.queued === 0) {
-            setMessage(
+            notifyOk(
               result.skipped > 0
                 ? `All ${result.skipped} ROMs already downloaded for ${selected.name}`
                 : `No ROMs found for ${selected.name}`,
             );
           } else {
-            setMessage(
+            notifyOk(
               `Queued ${result.queued} of ${result.total} for ${selected.name}` +
                 (result.skipped ? ` (${result.skipped} already local)` : ""),
             );
           }
         } catch (e) {
-          setError(e instanceof Error ? e.message : String(e));
+          notifyError(e instanceof Error ? e.message : String(e));
         } finally {
           setBusyKind(null);
         }
@@ -795,7 +795,7 @@ export function useLibraryData() {
 
       // With search: page the matching catalog, then enqueue.
       setBusyKind("download");
-      setError(null);
+      clearNotification();
       try {
         const query = catalogQueryFrom(selected, search);
         const items: { romId: number; platformSlug: string }[] = [];
@@ -816,13 +816,13 @@ export function useLibraryData() {
           if (page.items.length === 0) break;
         }
         if (items.length === 0) {
-          setMessage("Nothing to download for the current selection");
+          notifyOk("Nothing to download for the current selection");
           return;
         }
         await getApi().enqueueMany(items);
-        setMessage(`Queued ${items.length} downloads`);
+        notifyOk(`Queued ${items.length} downloads`);
       } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
+        notifyError(e instanceof Error ? e.message : String(e));
       } finally {
         setBusyKind(null);
       }
@@ -840,7 +840,7 @@ export function useLibraryData() {
       }));
     if (items.length === 0) return;
     await getApi().enqueueMany(items);
-    setMessage(`Queued ${items.length} downloads`);
+    notifyOk(`Queued ${items.length} downloads`);
   }, [
     selected,
     selectAll,
@@ -855,23 +855,23 @@ export function useLibraryData() {
   const downloadPlatform = useCallback(async () => {
     if (!selected) return;
     setBusyKind("platform");
-    setError(null);
+    clearNotification();
     try {
       const result = await getApi().enqueuePlatform(selected.id, selected.slug);
       if (result.queued === 0) {
-        setMessage(
+        notifyOk(
           result.skipped > 0
             ? `All ${result.skipped} ROMs already downloaded for ${selected.name}`
             : `No ROMs found for ${selected.name}`,
         );
       } else {
-        setMessage(
+        notifyOk(
           `Queued ${result.queued} of ${result.total} for ${selected.name}` +
             (result.skipped ? ` (${result.skipped} already local)` : ""),
         );
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      notifyError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusyKind(null);
     }
@@ -902,8 +902,6 @@ export function useLibraryData() {
     visible,
     listLoading,
     rangeLabel,
-    error,
-    message,
     busyPlatform,
     busyKind,
     scrollRef,

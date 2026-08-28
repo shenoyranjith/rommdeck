@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { getApi } from "../../api";
-import { Alert } from "../../components/ui";
+import { useNotification } from "../../components/NotificationProvider";
 import {
   applyUiTheme,
   applyUiCrt,
@@ -40,8 +40,7 @@ export function SettingsPage() {
   const [paths, setPaths] = useState<PathsInfo | null>(null);
   const [overridesText, setOverridesText] = useState("{}");
   const [overridesError, setOverridesError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { notifyOk, notifyError, clearNotification } = useNotification();
   const [testing, setTesting] = useState(false);
   const [activeSection, setActiveSection] =
     useState<SettingsSectionId>("appearance");
@@ -66,12 +65,12 @@ export function SettingsPage() {
       try {
         const next = (await getApi().saveConfig(partial)) as SettingsConfig;
         setCfg({ ...next, ui: normalizeUi(next.ui) });
-        setError(null);
+        clearNotification();
         if (partial.retrodeck) {
           setPaths((await getApi().getRetroDeckPaths()) as PathsInfo);
         }
       } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
+        notifyError(e instanceof Error ? e.message : String(e));
       }
     },
     [],
@@ -163,16 +162,15 @@ export function SettingsPage() {
 
   const test = async () => {
     setTesting(true);
-    setError(null);
-    setMessage(null);
+    clearNotification();
     try {
       await persistPartial({ romm: cfg.romm });
       const result = await getApi().testConnection();
       if (result.ok)
-        setMessage(`Connected — ${result.platforms ?? 0} platforms`);
-      else setError(result.error ?? "Connection failed");
+        notifyOk(`Connected — ${result.platforms ?? 0} platforms`);
+      else notifyError(result.error ?? "Connection failed");
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      notifyError(e instanceof Error ? e.message : String(e));
     } finally {
       setTesting(false);
     }
@@ -221,9 +219,6 @@ export function SettingsPage() {
   return (
     <div className="flex h-full min-h-0 flex-col gap-4">
       <SettingsHeader />
-
-      {message && <Alert tone="ok">{message}</Alert>}
-      {error && <Alert tone="err">{error}</Alert>}
 
       <div className="flex min-h-0 flex-1 flex-col gap-3 md:flex-row md:gap-4">
         <SettingsSectionNav

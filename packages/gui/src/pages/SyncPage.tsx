@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { getApi } from "../api";
 import { cn } from "../lib/cn";
+import { useNotification } from "../components/NotificationProvider";
 import {
-  Alert,
   PageHeader,
   Panel,
   btnClass,
@@ -32,8 +32,7 @@ interface SyncResult {
 export function SyncPage() {
   const [status, setStatus] = useState<DaemonStatus | null>(null);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { notifyOk, notifyError, clearNotification } = useNotification();
   const [lastManual, setLastManual] = useState<SyncResult | null>(null);
 
   const refresh = async () => {
@@ -49,17 +48,16 @@ export function SyncPage() {
 
   const syncNow = async () => {
     setBusy(true);
-    setError(null);
-    setMessage(null);
+    clearNotification();
     try {
       const result = (await getApi().syncNow()) as SyncResult;
       setLastManual(result);
-      setMessage(
+      notifyOk(
         `Sync finished: ${result.completed} completed, ${result.failed} failed, ${result.conflicts.length} conflicts`,
       );
       await refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      notifyError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
@@ -67,20 +65,23 @@ export function SyncPage() {
 
   const toggleDaemon = async (enable: boolean) => {
     setBusy(true);
-    setError(null);
+    clearNotification();
     try {
       const cfg = await getApi().getConfig();
       await getApi().saveConfig({
         sync: { ...cfg.sync, enabled: enable },
       });
       const result = await getApi().systemctl(enable ? "enable" : "disable");
-      setMessage(
-        result.output || (enable ? "Auto-sync enabled" : "Auto-sync disabled"),
-      );
-      if (!result.ok && result.output) setError(result.output);
+      if (!result.ok && result.output) {
+        notifyError(result.output);
+      } else {
+        notifyOk(
+          result.output || (enable ? "Auto-sync enabled" : "Auto-sync disabled"),
+        );
+      }
       await refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      notifyError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
@@ -125,9 +126,6 @@ export function SyncPage() {
           </>
         }
       />
-
-      {message && <Alert tone="ok">{message}</Alert>}
-      {error && <Alert tone="err">{error}</Alert>}
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <Panel title="Daemon status">

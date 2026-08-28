@@ -53,17 +53,6 @@ export function LibraryPage() {
         onDownloadPlatform={() => void lib.downloadPlatform()}
       />
 
-      {lib.message && (
-        <div className="border border-ok/40 bg-bg2 px-3 py-2 text-sm text-ok">
-          {lib.message}
-        </div>
-      )}
-      {lib.error && (
-        <div className="border border-danger/40 bg-bg2 px-3 py-2 text-sm text-danger">
-          {lib.error}
-        </div>
-      )}
-
       <div
         className={cn(
           "@container grid min-h-0 flex-1 grid-cols-1 gap-3",

@@ -18,6 +18,7 @@ import { getApi } from "./api";
 import { applyUiTheme, applyUiCrt, isUiTheme, DEFAULT_UI_THEME, readStoredUiCrt, UI_CRT_EVENT, type UiCrtSettings } from "./theme";
 import { useDownloadInventorySync } from "./hooks/useDownloadInventorySync";
 import { ConfirmProvider } from "./components/ConfirmProvider";
+import { NotificationProvider, NotificationAnchor } from "./components/NotificationProvider";
 
 const NAV = [
   { to: "/", end: true, label: "Library", Icon: IconLibrary },
@@ -69,6 +70,7 @@ export function App() {
 
   return (
     <ConfirmProvider>
+      <NotificationProvider>
       <div className="relative h-full w-full min-h-0 min-w-0 overflow-hidden bg-bg0 text-text">
       {crt.scanlines && (
         <div
@@ -135,11 +137,15 @@ export function App() {
                 <Route path="/settings" element={<SettingsPage />} />
               </Routes>
             </main>
-            <StatusBar />
+            <div className="relative shrink-0">
+              <NotificationAnchor />
+              <StatusBar />
+            </div>
           </div>
         </div>
       </div>
       </div>
+      </NotificationProvider>
     </ConfirmProvider>
   );
 }
