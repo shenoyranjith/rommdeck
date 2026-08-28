@@ -276,6 +276,17 @@ rommdeck/
 | Downloads — active queue | `docs/mockups/downloads-vector-active.png` |
 | Downloads — active + failed | `docs/mockups/downloads-vector-failed.png` |
 | Downloads — empty | `docs/mockups/downloads-vector-empty.png` |
+| Settings — Appearance + RomM | `docs/mockups/settings-vector-candy.png` |
+| Settings — Retrodeck + Auto-sync | `docs/mockups/settings-vector-candy-sync.png` |
+| Sync — actions + status only | `docs/mockups/sync-vector-slim.png` |
+
+## Settings UI (planned)
+
+**Status:** Phase 1 approved — build Settings shell + Appearance ([`settings-vector-candy.png`](docs/mockups/settings-vector-candy.png)). RomM, Retrodeck, Auto-sync deferred.
+
+**Phase 1:** New shell + refined Appearance. Existing RomM / Retrodeck / Auto-sync content **moved** into correct section panels (unrefined); refine one section per later phase.
+
+Full four-section spec unchanged — see plan file. Mockups: `docs/mockups/settings-vector-*.png`, `docs/mockups/sync-vector-slim.png`.
 
 ## Downloads UI + queue
 

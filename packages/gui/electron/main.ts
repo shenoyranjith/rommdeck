@@ -1,5 +1,13 @@
-import { app, BrowserWindow, ipcMain, shell, session } from "electron";
-import { existsSync } from "node:fs";
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  nativeImage,
+  shell,
+  session,
+  type NativeImage,
+} from "electron";
+import { existsSync, copyFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { execFile } from "node:child_process";
@@ -216,11 +224,121 @@ function resolvePreloadPath(): string {
   throw new Error(`RommDeck preload script not found next to ${__dirname}`);
 }
 
+let appIcon: NativeImage | undefined;
+
+function resolveAppIconPath(): string | undefined {
+  const roots = [path.join(__dirname, ".."), app.getAppPath()];
+  const rels = [
+    path.join(__dirname, "icon.png"),
+    "assets/icon-256.png",
+    "assets/icon.png",
+    "dist/icon.png",
+    "public/icon.png",
+  ];
+  const seen = new Set<string>();
+  for (const root of roots) {
+    for (const rel of rels) {
+      const p = path.isAbsolute(rel) ? rel : path.resolve(root, rel);
+      if (seen.has(p) || !existsSync(p)) continue;
+      seen.add(p);
+      return p;
+    }
+  }
+  return undefined;
+}
+
+function loadAppIcon(): NativeImage | undefined {
+  const iconPath = resolveAppIconPath();
+  if (!iconPath) return undefined;
+  let image = nativeImage.createFromPath(iconPath);
+  if (image.isEmpty()) {
+    log.error("app", "icon failed to load", { iconPath });
+    return undefined;
+  }
+  if (process.platform === "linux") {
+    const { width, height } = image.getSize();
+    if (width !== 256 || height !== 256) {
+      image = image.resize({ width: 256, height: 256, quality: "best" });
+    }
+  }
+  log.app("icon loaded", { iconPath, size: image.getSize() });
+  return image;
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+function resolveAssetsDir(): string | undefined {
+  const candidates = [
+    path.join(__dirname, "..", "assets"),
+    path.join(app.getAppPath(), "assets"),
+  ];
+  for (const p of candidates) {
+    if (existsSync(path.join(p, "icon-256.png"))) return p;
+  }
+  return undefined;
+}
+
+/** Register icon + .desktop so Linux DEs (Wayland/X11) can show the taskbar icon. */
+function ensureLinuxDesktopIntegration(): void {
+  if (process.platform !== "linux") return;
+
+  const assetsDir = resolveAssetsDir();
+  if (!assetsDir) {
+    log.error("app", "linux desktop integration skipped — assets dir not found");
+    return;
+  }
+  const home = app.getPath("home");
+  const iconSizes = [256, 128, 48] as const;
+
+  for (const size of iconSizes) {
+    const src = path.join(assetsDir, size === 256 ? "icon-256.png" : `icon-${size}.png`);
+    if (!existsSync(src)) continue;
+    const destDir = path.join(
+      home,
+      ".local/share/icons/hicolor",
+      `${size}x${size}`,
+      "apps",
+    );
+    mkdirSync(destDir, { recursive: true });
+    copyFileSync(src, path.join(destDir, "rommdeck.png"));
+  }
+
+  const icon256 = path.join(
+    home,
+    ".local/share/icons/hicolor/256x256/apps/rommdeck.png",
+  );
+  if (!existsSync(icon256)) return;
+
+  const appsDir = path.join(home, ".local/share/applications");
+  mkdirSync(appsDir, { recursive: true });
+
+  const exec = `${shellQuote(process.execPath)} ${shellQuote(app.getAppPath())}`;
+  const desktop = `[Desktop Entry]
+Type=Application
+Name=RommDeck
+Comment=RomM and RetroDECK desktop bridge
+Exec=${exec}
+Icon=${icon256}
+StartupWMClass=rommdeck
+Categories=Game;
+Terminal=false
+`;
+
+  writeFileSync(path.join(appsDir, "rommdeck.desktop"), desktop, "utf8");
+  log.app("linux desktop entry installed", {
+    desktop: path.join(appsDir, "rommdeck.desktop"),
+    icon: icon256,
+  });
+}
+
 function createWindow(): void {
   // Same process: never open a second window (HMR / accidental double ready)
   const existing = BrowserWindow.getAllWindows()[0];
   if (existing && !existing.isDestroyed()) {
     mainWindow = existing;
+    if (appIcon) mainWindow.setIcon(appIcon);
     if (process.env.VITE_DEV_SERVER_URL) {
       void mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
     }
@@ -229,13 +347,14 @@ function createWindow(): void {
   }
 
   const preload = resolvePreloadPath();
-  log.app("window creating", { preload });
+  log.app("window creating", { preload, hasIcon: Boolean(appIcon) });
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 720,
     minWidth: 960,
     minHeight: 640,
     title: "RommDeck",
+    ...(appIcon ? { icon: appIcon } : {}),
     // Match default candy accent — CSS frame is a body fill ring; edge clip reveals this.
     backgroundColor: "#ff2d95",
     frame: false,
@@ -250,6 +369,9 @@ function createWindow(): void {
   });
 
   mainWindow.once("ready-to-show", () => {
+    if (appIcon && mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.setIcon(appIcon);
+    }
     mainWindow?.show();
   });
 
@@ -689,6 +811,12 @@ function installRommAssetAuth(): void {
 
 app.whenReady().then(async () => {
   log.app("started", { version: app.getVersion(), logFile: getAppLogPath() });
+  appIcon = loadAppIcon();
+  const iconPath = resolveAppIconPath();
+  if (iconPath) ensureLinuxDesktopIntegration();
+  if (appIcon && process.platform === "darwin" && app.dock) {
+    app.dock.setIcon(appIcon);
+  }
   installRommAssetAuth();
   registerIpc();
   createWindow();

@@ -1,14 +1,14 @@
 import { useId } from "react";
+import { BRAND_MARK_FRAME } from "../assets/brand-mark-paths";
 
-/** RD mark — chamfered frame, grid fill, neon glow (shell mockup). */
+/** RD mark — chamfered frame, grid fill, neon glow (matches assets/brand-mark.svg). */
 export function BrandMark({ size = 128 }: { size?: number }) {
   const uid = useId().replace(/:/g, "");
   const gridId = `brand-grid-${uid}`;
   const glowId = `brand-glow-${uid}`;
   const neonId = `brand-neon-${uid}`;
 
-  // Inset stroke so chamfer corners stay fully visible inside the viewBox.
-  const frame = "16,3 84,3 97,16 97,84 84,97 16,97 3,84 3,16";
+  const frame = BRAND_MARK_FRAME;
 
   return (
     <svg

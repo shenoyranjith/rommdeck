@@ -23,7 +23,7 @@ packages/syncd/     Background sync daemon CLI
 packaging/systemd/  rommdeck-syncd.service
 fixtures/           Optional sample retrodeck.json (non-RetroDECK fallback)
 data/platform-map.json
-docs/mockups/       UI mockups (themes + Downloads page)
+docs/mockups/       UI mockups (themes, Downloads, Settings, Sync)
 scripts/seed-dev-tree.sh
 scripts/deploy-syncd.sh
 ```
@@ -133,7 +133,7 @@ The Downloads page shows **Active** and **Failed** sections with progress, cance
 
 Library badges and the status bar update live when downloads finish (`useDownloadInventorySync` + inventory events).
 
-UI mockups: `docs/mockups/downloads-vector-*.png`
+UI mockups: `docs/mockups/downloads-vector-*.png`, `docs/mockups/settings-vector-*.png`, `docs/mockups/sync-vector-slim.png`
 
 ## Scripts
 

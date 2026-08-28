@@ -1,8 +1,23 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import electron from "vite-plugin-electron/simple";
 import path from "node:path";
+import { cpSync, existsSync, mkdirSync } from "node:fs";
+
+function copyElectronAssets(): Plugin {
+  return {
+    name: "copy-electron-assets",
+    closeBundle() {
+      const outDir = path.resolve(__dirname, "dist-electron");
+      mkdirSync(outDir, { recursive: true });
+      const icon256 = path.resolve(__dirname, "assets/icon-256.png");
+      if (existsSync(icon256)) {
+        cpSync(icon256, path.join(outDir, "icon.png"));
+      }
+    },
+  };
+}
 
 export default defineConfig({
   plugins: [
@@ -16,6 +31,7 @@ export default defineConfig({
           args.startup();
         },
         vite: {
+          plugins: [copyElectronAssets()],
           build: {
             outDir: "dist-electron",
             rollupOptions: {
