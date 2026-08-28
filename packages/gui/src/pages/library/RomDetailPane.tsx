@@ -2,7 +2,7 @@ import { cn } from "../../lib/cn";
 import { IconClose } from "../../components/icons";
 import { formatBytes } from "./format";
 import type { Platform, RomItem } from "./types";
-import { romDetailStatusClass, romStatusLabel } from "./romStatus";
+import { romDetailBadges } from "./romStatus";
 import {
   activeDownloadLabel,
   type ActiveDownloadStatus,
@@ -88,14 +88,19 @@ export function RomDetailPane({
               </p>
             </div>
 
-            <span
-              className={cn(
-                "inline-flex w-fit items-center px-1.5 py-0.5 text-[10px] font-semibold tracking-wide uppercase",
-                romDetailStatusClass(detail),
-              )}
-            >
-              {romStatusLabel(detail)}
-            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {romDetailBadges(detail, queueStatus).map((badge) => (
+                <span
+                  key={badge.key}
+                  className={cn(
+                    "inline-flex items-center px-1.5 py-0.5 text-[10px] font-semibold tracking-wide uppercase",
+                    badge.className,
+                  )}
+                >
+                  {badge.label}
+                </span>
+              ))}
+            </div>
 
             {detailError && (
               <div className=" border border-danger/40 px-2 py-1.5 text-xs text-danger">

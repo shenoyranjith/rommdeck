@@ -26,6 +26,8 @@ export interface RomItem {
   downloaded?: boolean;
   /** False when downloaded but RomM provided no hash to verify against. */
   verified?: boolean;
+  /** True when downloaded but absent from ES-DE gamelist.xml. */
+  metadataMissing?: boolean;
 }
 
 export type StatusFilter = "all" | "downloaded" | "missing";

@@ -9,6 +9,13 @@ import { verifyRomFileHash } from "../hash.js";
 import { syncEsdeMetadata, removeEsdeMetadata } from "../esde/metadata.js";
 import { isGamelistWriteActive, shutdownGamelistWrites } from "../esde/gamelist-queue.js";
 import { expectedHashesForFile, hashesMatchRom, romHasExpectedHash } from "./hashes.js";
+import {
+  clearPersistedDownloadQueue,
+  loadPersistedDownloadQueue,
+  savePersistedDownloadQueue,
+  type PersistedActiveEntry,
+  type PersistedDownloadQueue,
+} from "./queue-persist.js";
 import { log } from "../log.js";
 
 export interface DownloadQueueState {
@@ -99,10 +106,236 @@ export class DownloadManager extends EventEmitter {
   private opts: DownloadManagerOptions;
   /** RomM metadata captured at enqueue for hash verification. */
   private romByJobId = new Map<string, RommRom>();
+  private restored = false;
+  private shuttingDown = false;
+  private shutdownSnapshot: PersistedDownloadQueue | null = null;
+  private batchDepth = 0;
+  private failedDirty = false;
+  private emitScheduled = false;
+  private persistTimer: ReturnType<typeof setTimeout> | null = null;
+  private jobEmitLast = new Map<string, number>();
+
+  /** Coalesce queue notifications while enqueueing many jobs. */
+  beginBatch(): void {
+    this.batchDepth++;
+  }
+
+  endBatch(): void {
+    if (this.batchDepth <= 0) return;
+    this.batchDepth--;
+    if (this.batchDepth === 0) this.afterEnqueue();
+  }
 
   constructor(opts: DownloadManagerOptions) {
     super();
     this.opts = opts;
+  }
+
+  /** Reload active + failed jobs from disk and resume the pump. */
+  async restorePersistedQueue(): Promise<void> {
+    if (this.restored) return;
+
+    const data = loadPersistedDownloadQueue();
+    if (!data) {
+      this.restored = true;
+      return;
+    }
+
+    log.download("restoring persisted queue", {
+      active: data.active.length,
+      failed: data.failed.length,
+      savedAt: data.savedAt,
+    });
+
+    let downloadQueued = 0;
+    let metadataQueued = 0;
+
+    for (const failed of data.failed) {
+      if (this.getActiveJobForRom(failed.romId)) continue;
+      this.failedJobs.push({
+        ...failed,
+        status: "error",
+        progressBytes: 0,
+        error: failed.error ?? "Failed before last exit",
+      });
+    }
+
+    this.beginBatch();
+    try {
+      let processed = 0;
+      for (const entry of data.active) {
+        const job = this.jobFromPersisted(entry);
+        if (this.getActiveJobForRom(job.romId)) continue;
+
+        const needsDownload = !this.jobFilesComplete(job);
+
+        if (!needsDownload && this.opts.rdHomePath) {
+          this.scheduleMetadata(job);
+          metadataQueued++;
+        } else if (needsDownload) {
+          this.queue.push(job);
+          downloadQueued++;
+        }
+
+        processed++;
+        if (processed % 25 === 0) {
+          await new Promise<void>((resolve) => setImmediate(resolve));
+        }
+      }
+    } finally {
+      this.endBatch();
+    }
+
+    this.restored = true;
+    this.flushPersistedQueue();
+
+    if (this.failedJobs.length > 0) this.emitFailed();
+    if (this.getJobs().length > 0) this.flushEmitQueue();
+
+    log.download("queue restore complete", {
+      downloadQueued,
+      metadataQueued,
+      failed: this.failedJobs.length,
+    });
+  }
+
+  private jobFromPersisted(entry: PersistedActiveEntry): DownloadJob {
+    return {
+      ...entry.job,
+      status: entry.phase === "metadata" ? "metadata" : "queued",
+      progressBytes: 0,
+    };
+  }
+
+  private jobFilesComplete(job: Pick<DownloadJob, "romId" | "filenames">): boolean {
+    const rows = this.opts.index.getByRomId(job.romId);
+    if (rows.length === 0) return false;
+    return job.filenames.every((filename) => {
+      const row = rows.find((r) => r.filename === filename);
+      return row !== undefined && existsSync(row.path);
+    });
+  }
+
+  private buildPersistedActive(): PersistedActiveEntry[] {
+    return this.getJobs()
+      .filter((j) => isActiveDownloadStatus(j.status))
+      .map((job) => ({
+        phase: job.status === "metadata" ? ("metadata" as const) : ("download" as const),
+        job: {
+          id: job.id,
+          romId: job.romId,
+          romName: job.romName,
+          rommSlug: job.rommSlug,
+          filenames: job.filenames,
+          totalBytes: job.totalBytes,
+          coverUrl: job.coverUrl ?? null,
+        },
+      }));
+  }
+
+  private buildPersistedPayload(): PersistedDownloadQueue {
+    const active = this.buildPersistedActive();
+    const failed = this.failedJobs.map((job) => ({
+      id: job.id,
+      romId: job.romId,
+      romName: job.romName,
+      rommSlug: job.rommSlug,
+      filenames: job.filenames,
+      totalBytes: job.totalBytes,
+      coverUrl: job.coverUrl ?? null,
+      error: job.error,
+    }));
+    return {
+      version: 1,
+      savedAt: new Date().toISOString(),
+      active,
+      failed,
+    };
+  }
+
+  /** Write queue state to disk (e.g. on window close when nothing is actively transferring). */
+  flushPersistedQueue(): void {
+    if (this.persistTimer) {
+      clearTimeout(this.persistTimer);
+      this.persistTimer = null;
+    }
+    this.writePersistedSnapshot();
+  }
+
+  private schedulePersistQueue(): void {
+    if (this.shuttingDown) return;
+    if (this.persistTimer) clearTimeout(this.persistTimer);
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = null;
+      this.writePersistedSnapshot();
+    }, 500);
+  }
+
+  private scheduleEmitQueue(): void {
+    this.schedulePersistQueue();
+    if (this.emitScheduled) return;
+    this.emitScheduled = true;
+    setImmediate(() => {
+      this.emitScheduled = false;
+      this.emit("queue", this.getJobs());
+    });
+  }
+
+  private flushEmitQueue(): void {
+    this.emitScheduled = false;
+    this.emit("queue", this.getJobs());
+  }
+
+  private emitJobThrottled(job: DownloadJob): void {
+    if (job.status !== "downloading") {
+      this.emit("job", job);
+      return;
+    }
+    const now = Date.now();
+    const last = this.jobEmitLast.get(job.id) ?? 0;
+    if (now - last < 100) return;
+    this.jobEmitLast.set(job.id, now);
+    this.emit("job", job);
+  }
+
+  private afterEnqueue(): void {
+    if (this.batchDepth > 0) return;
+    if (this.failedDirty) {
+      this.failedDirty = false;
+      this.emitFailed();
+    }
+    this.scheduleEmitQueue();
+    void this.pump();
+  }
+
+  private writePersistedSnapshot(): void {
+    try {
+      if (this.shuttingDown && this.shutdownSnapshot) {
+        savePersistedDownloadQueue(this.shutdownSnapshot);
+        return;
+      }
+
+      const payload = this.buildPersistedPayload();
+      if (payload.active.length === 0 && payload.failed.length === 0) {
+        clearPersistedDownloadQueue();
+        return;
+      }
+
+      savePersistedDownloadQueue(payload);
+      log.download("queue persisted", {
+        active: payload.active.length,
+        failed: payload.failed.length,
+      });
+    } catch (e) {
+      log.download("persist queue failed", {
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
+
+  private emitFailed(): void {
+    this.schedulePersistQueue();
+    this.emit("failed", this.getFailedJobs());
   }
 
   /** Active download, then metadata queue, then download queue — top-to-bottom FIFO in the UI. */
@@ -120,10 +353,6 @@ export class DownloadManager extends EventEmitter {
 
   getQueueState(): DownloadQueueState {
     return { active: this.getJobs(), failed: this.getFailedJobs() };
-  }
-
-  private emitFailed(): void {
-    this.emit("failed", this.getFailedJobs());
   }
 
   getActiveCount(): number {
@@ -153,6 +382,18 @@ export class DownloadManager extends EventEmitter {
   /** Cancel transfers and drain or abort in-flight gamelist writes before app exit. */
   async prepareForShutdown(): Promise<void> {
     log.download("prepareForShutdown");
+    this.shutdownSnapshot = this.buildPersistedPayload();
+    if (
+      this.shutdownSnapshot.active.length > 0 ||
+      this.shutdownSnapshot.failed.length > 0
+    ) {
+      savePersistedDownloadQueue(this.shutdownSnapshot);
+      log.download("queue persisted for shutdown", {
+        active: this.shutdownSnapshot.active.length,
+        failed: this.shutdownSnapshot.failed.length,
+      });
+    }
+    this.shuttingDown = true;
     if (this.active) this.cancel(this.active.id);
     for (const job of [...this.queue]) this.cancel(job.id);
     for (const job of [...this.metadataJobs]) {
@@ -172,6 +413,21 @@ export class DownloadManager extends EventEmitter {
   }
 
   enqueue(rom: RommRom, rommSlug: string): DownloadJob {
+    const job = this.addToQueue(rom, rommSlug);
+    this.afterEnqueue();
+    return job;
+  }
+
+  enqueueMany(roms: { rom: RommRom; rommSlug: string }[]): DownloadJob[] {
+    this.beginBatch();
+    try {
+      return roms.map(({ rom, rommSlug }) => this.addToQueue(rom, rommSlug));
+    } finally {
+      this.endBatch();
+    }
+  }
+
+  private addToQueue(rom: RommRom, rommSlug: string): DownloadJob {
     const existing = this.getActiveJobForRom(rom.id);
     if (existing) {
       log.download("enqueue skipped: already in queue", {
@@ -184,7 +440,10 @@ export class DownloadManager extends EventEmitter {
 
     const hadFailed = this.failedJobs.some((j) => j.romId === rom.id);
     this.failedJobs = this.failedJobs.filter((j) => j.romId !== rom.id);
-    if (hadFailed) this.emitFailed();
+    if (hadFailed) {
+      if (this.batchDepth > 0) this.failedDirty = true;
+      else this.emitFailed();
+    }
 
     const filenames = romFilenames(rom);
     if (filenames.length === 0) {
@@ -209,13 +468,7 @@ export class DownloadManager extends EventEmitter {
       romName: rom.name,
       rommSlug,
     });
-    this.emit("queue", this.getJobs());
-    void this.pump();
     return job;
-  }
-
-  enqueueMany(roms: { rom: RommRom; rommSlug: string }[]): DownloadJob[] {
-    return roms.map(({ rom, rommSlug }) => this.enqueue(rom, rommSlug));
   }
 
   cancel(jobId: string): void {
@@ -227,7 +480,7 @@ export class DownloadManager extends EventEmitter {
       this.queue = this.queue.filter((j) => j.id !== jobId);
       this.romByJobId.delete(jobId);
       this.emit("job", queued);
-      this.emit("queue", this.getJobs());
+      this.scheduleEmitQueue();
       return;
     }
 
@@ -235,7 +488,7 @@ export class DownloadManager extends EventEmitter {
       this.active.status = "cancelled";
       this.activeAbort?.abort();
       this.emit("job", { ...this.active });
-      this.emit("queue", this.getJobs());
+      this.scheduleEmitQueue();
       return;
     }
 
@@ -246,7 +499,7 @@ export class DownloadManager extends EventEmitter {
       this.metadataJobs = this.metadataJobs.filter((j) => j.id !== jobId);
       this.metadataAbort.delete(jobId);
       this.emit("job", { ...metadata });
-      this.emit("queue", this.getJobs());
+      this.scheduleEmitQueue();
     }
   }
 
@@ -284,12 +537,17 @@ export class DownloadManager extends EventEmitter {
     const toRetry = [...this.failedJobs];
     if (toRetry.length === 0) return [];
     log.download("retrying all failed jobs", { count: toRetry.length });
-    const results: DownloadJob[] = [];
-    for (const failed of toRetry) {
-      const job = await this.retry(failed.id);
-      if (job) results.push(job);
+    this.beginBatch();
+    try {
+      const results: DownloadJob[] = [];
+      for (const failed of toRetry) {
+        const job = await this.retry(failed.id);
+        if (job) results.push(job);
+      }
+      return results;
+    } finally {
+      this.endBatch();
     }
-    return results;
   }
 
   private async pump(): Promise<void> {
@@ -302,12 +560,13 @@ export class DownloadManager extends EventEmitter {
           job.status = "cancelled";
           this.emit("job", job);
           this.romByJobId.delete(job.id);
+          this.scheduleEmitQueue();
           continue;
         }
         this.active = job;
         job.status = "downloading";
         this.emit("job", job);
-        this.emit("queue", this.getJobs());
+        this.scheduleEmitQueue();
         const abort = new AbortController();
         this.activeAbort = abort;
         try {
@@ -315,7 +574,7 @@ export class DownloadManager extends EventEmitter {
           if (metadataQueued) {
             this.active = null;
             this.romByJobId.delete(job.id);
-            this.emit("queue", this.getJobs());
+            this.scheduleEmitQueue();
             continue;
           }
           if (!this.cancelled.has(job.id)) {
@@ -351,7 +610,7 @@ export class DownloadManager extends EventEmitter {
           this.failedJobs.push({ ...job });
           this.emitFailed();
         }
-        this.emit("queue", this.getJobs());
+        this.scheduleEmitQueue();
       }
     } finally {
       this.running = false;
@@ -372,6 +631,7 @@ export class DownloadManager extends EventEmitter {
       pendingMetadata: this.metadataJobs.length,
     });
     this.emit("job", job);
+    this.scheduleEmitQueue();
 
     const abort = new AbortController();
     this.metadataAbort.set(job.id, abort);
@@ -420,7 +680,7 @@ export class DownloadManager extends EventEmitter {
       status: job.status,
     });
     this.emit("job", job);
-    this.emit("queue", this.getJobs());
+    this.scheduleEmitQueue();
   }
 
   private removePartFiles(job: DownloadJob): void {
@@ -488,7 +748,7 @@ export class DownloadManager extends EventEmitter {
           signal,
           onProgress: (bytes) => {
             job.progressBytes = received + bytes;
-            this.emit("job", job);
+            this.emitJobThrottled(job);
           },
         });
 

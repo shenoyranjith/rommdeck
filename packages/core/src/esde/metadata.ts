@@ -5,6 +5,7 @@ import { upsertGamelistGameLocked, removeGamelistGameLocked } from "./gamelist.j
 import { downloadRomMedia, removeRomMedia } from "./media.js";
 import { gamelistFilePath, resolveEsdePaths } from "./paths.js";
 import { buildGamelistEntry } from "./rom-metadata.js";
+import { hasGamelistEntry } from "./gamelist.js";
 
 export interface SyncEsdeMetadataOptions {
   client: RommClient;
@@ -89,4 +90,19 @@ export async function removeEsdeMetadata(opts: RemoveEsdeMetadataOptions): Promi
     mediaRemoved: mediaRemoved.length,
   });
   return { gamelistRemoved, mediaRemoved };
+}
+
+/** Whether ES-DE gamelist.xml lists this ROM (requires RetroDECK home). */
+export function romHasEsdeMetadata(opts: {
+  rdHomePath?: string;
+  downloadedMediaPath?: string;
+  rommSlug: string;
+  primaryFilename: string;
+  platformMapOverrides?: Record<string, string>;
+}): boolean {
+  if (!opts.rdHomePath || !opts.primaryFilename) return false;
+  const esdeFolder = rommSlugToEsdeFolder(opts.rommSlug, opts.platformMapOverrides ?? {});
+  const esdePaths = resolveEsdePaths(opts.rdHomePath, opts.downloadedMediaPath);
+  const gamelistPath = gamelistFilePath(esdePaths.gamelistsRoot, esdeFolder);
+  return hasGamelistEntry(gamelistPath, opts.primaryFilename);
 }

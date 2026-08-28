@@ -110,6 +110,12 @@ export function writeGamelist(filePath: string, games: GamelistGame[]): void {
   writeFileSync(filePath, serializeGamelistXml(games), "utf8");
 }
 
+/** True when gamelist.xml contains an entry for this ROM filename. */
+export function hasGamelistEntry(filePath: string, romFilename: string): boolean {
+  const target = normalizeGamelistPath(gamelistPathForRom(romFilename));
+  return readGamelist(filePath).some((g) => normalizeGamelistPath(g.path) === target);
+}
+
 /** Insert or replace a game entry matched by relative ROM path (caller must hold gamelist lock). */
 export function upsertGamelistGame(filePath: string, game: GamelistGame): void {
   const target = normalizeGamelistPath(game.path);

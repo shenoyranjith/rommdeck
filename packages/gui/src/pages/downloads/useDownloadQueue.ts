@@ -51,8 +51,10 @@ export function useDownloadQueue() {
       });
     });
 
+    let raf = 0;
     const offQueue = getApi().onDownloadQueue((list) => {
-      setActiveJobs(list as DownloadJob[]);
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => setActiveJobs(list as DownloadJob[]));
     });
 
     const offFailed = getApi().onDownloadFailed((list) => {
@@ -60,6 +62,7 @@ export function useDownloadQueue() {
     });
 
     return () => {
+      cancelAnimationFrame(raf);
       offJob();
       offQueue();
       offFailed();

@@ -21,6 +21,7 @@ import {
   ensureDevice,
   runSyncSession,
   rommSlugToEsdeFolder,
+  romHasEsdeMetadata,
   type RommDeckConfig,
   type RommRom,
   log,
@@ -34,6 +35,20 @@ let mainWindow: BrowserWindow | null = null;
 let downloadManager: DownloadManager | null = null;
 let libraryIndex: LibraryIndex | null = null;
 let quitting = false;
+let queueRestoreScheduled = false;
+
+/** Defer queue restore until after the library can load platforms (or a short fallback). */
+function scheduleQueueRestore(): void {
+  if (queueRestoreScheduled) return;
+  queueRestoreScheduled = true;
+  void getDownloadManager()
+    .restorePersistedQueue()
+    .catch((e) => {
+      log.download("queue restore failed", {
+        error: e instanceof Error ? e.message : String(e),
+      });
+    });
+}
 
 function hasActiveTransfers(): boolean {
   if (downloadManager?.hasActiveWork()) return true;
@@ -56,49 +71,53 @@ function formatTransferDetail(b: {
 }
 
 async function performQuit(win: BrowserWindow | null): Promise<void> {
-  await downloadManager?.prepareForShutdown();
+  if (hasActiveTransfers()) {
+    await downloadManager?.prepareForShutdown();
+  } else {
+    downloadManager?.flushPersistedQueue();
+  }
   await shutdownGamelistWrites();
   quitting = true;
   if (win && !win.isDestroyed()) win.close();
   else app.quit();
 }
 
-async function confirmQuit(win: BrowserWindow | null): Promise<void> {
-  if (!hasActiveTransfers()) {
-    await performQuit(win);
-    return;
+async function requestAppQuit(win: BrowserWindow | null): Promise<void> {
+  if (quitting) return;
+
+  if (hasActiveTransfers()) {
+    const breakdown = downloadManager?.getActiveBreakdown() ?? {
+      downloading: 0,
+      queued: 0,
+      metadata: 0,
+      gamelistWriteActive: isGamelistWriteActive(),
+      total: 0,
+    };
+    const target = win && !win.isDestroyed() ? win : BrowserWindow.getFocusedWindow();
+    const opts = {
+      type: "warning" as const,
+      title: "Active transfers",
+      message: "RommDeck still has work in progress.",
+      detail: formatTransferDetail(breakdown),
+      buttons: ["Stay", "Quit anyway"],
+      defaultId: 0,
+      cancelId: 0,
+    };
+    const { response } =
+      target && !target.isDestroyed()
+        ? await dialog.showMessageBox(target, opts)
+        : await dialog.showMessageBox(opts);
+    if (response !== 1) return;
   }
 
-  const breakdown = downloadManager?.getActiveBreakdown() ?? {
-    downloading: 0,
-    queued: 0,
-    metadata: 0,
-    gamelistWriteActive: isGamelistWriteActive(),
-    total: 0,
-  };
-  const target = win && !win.isDestroyed() ? win : BrowserWindow.getFocusedWindow();
-  const opts = {
-    type: "warning" as const,
-    title: "Active transfers",
-    message: "RommDeck still has work in progress.",
-    detail: formatTransferDetail(breakdown),
-    buttons: ["Stay", "Quit anyway"],
-    defaultId: 0,
-    cancelId: 0,
-  };
-  const { response } =
-    target && !target.isDestroyed()
-      ? await dialog.showMessageBox(target, opts)
-      : await dialog.showMessageBox(opts);
-  if (response === 1) await performQuit(win);
+  await performQuit(win);
 }
 
 function attachWindowCloseGuard(win: BrowserWindow): void {
   win.on("close", (e) => {
     if (quitting) return;
-    if (!hasActiveTransfers()) return;
     e.preventDefault();
-    void confirmQuit(win);
+    void requestAppQuit(win);
   });
 }
 
@@ -107,24 +126,59 @@ function getIndex(): LibraryIndex {
   return libraryIndex;
 }
 
+function primaryRomFilename(rom: RommRom, index: LibraryIndex): string | undefined {
+  const rows = index.getByRomId(rom.id);
+  if (rows.length > 0) return rows[0]?.filename;
+  if (rom.fs_name) return rom.fs_name;
+  const first = rom.files?.[0];
+  return first?.file_name;
+}
+
 function romLocalFlags(
   rom: RommRom,
   index: LibraryIndex,
   romsPath: string,
   slug: string,
   overrides: Record<string, string>,
-): { downloaded: boolean; verified?: boolean } {
+  rdHomePath?: string,
+  downloadedMediaPath?: string,
+): { downloaded: boolean; verified?: boolean; metadataMissing?: boolean } {
   if (!slug) {
     const rows = index.getByRomId(rom.id);
     if (rows.length === 0) return { downloaded: false };
-    return {
-      downloaded: true,
-      verified: rows.every((r) => r.verified),
-    };
+    const downloaded = true;
+    const verified = rows.every((r) => r.verified);
+    const primary = rows[0]?.filename;
+    const metadataMissing =
+      rdHomePath && primary
+        ? !romHasEsdeMetadata({
+            rdHomePath,
+            downloadedMediaPath,
+            rommSlug: rows[0]?.romm_slug ?? "",
+            primaryFilename: primary,
+            platformMapOverrides: overrides,
+          })
+        : undefined;
+    return { downloaded, verified, metadataMissing };
   }
   const status = getRomLocalStatus(rom, index, romsPath, slug, overrides);
   if (status === "missing") return { downloaded: false };
-  return { downloaded: true, verified: status === "verified" };
+  const primary = primaryRomFilename(rom, index);
+  const metadataMissing =
+    rdHomePath && primary
+      ? !romHasEsdeMetadata({
+          rdHomePath,
+          downloadedMediaPath,
+          rommSlug: slug,
+          primaryFilename: primary,
+          platformMapOverrides: overrides,
+        })
+      : undefined;
+  return {
+    downloaded: true,
+    verified: status === "verified",
+    metadataMissing,
+  };
 }
 
 function getDownloadManager(): DownloadManager {
@@ -335,11 +389,13 @@ function registerIpc(): void {
     const cfg = loadConfig();
     const client = createRommClient(cfg.romm.baseUrl, cfg.romm.apiToken);
     const platforms = await client.getPlatforms();
-    return platforms.map((p) => ({
+    const result = platforms.map((p) => ({
       ...p,
       logoUrl: client.logoUrlFor(p),
       displayName: p.display_name || p.custom_name || p.name,
     }));
+    scheduleQueueRestore();
+    return result;
   });
 
   ipcMain.handle(
@@ -367,6 +423,8 @@ function registerIpc(): void {
           paths.romsPath,
           slug,
           cfg.platformMapOverrides,
+          paths.rdHomePath,
+          paths.downloadedMediaPath,
         );
         return {
           ...rom,
@@ -391,6 +449,8 @@ function registerIpc(): void {
       paths.romsPath,
       slug,
       cfg.platformMapOverrides,
+      paths.rdHomePath,
+      paths.downloadedMediaPath,
     );
     return {
       ...rom,
@@ -423,12 +483,12 @@ function registerIpc(): void {
       const cfg = loadConfig();
       const client = createRommClient(cfg.romm.baseUrl, cfg.romm.apiToken);
       const dm = getDownloadManager();
-      const jobs = [];
+      const roms: { rom: RommRom; rommSlug: string }[] = [];
       for (const item of items) {
         const rom = await client.getRom(item.romId);
-        jobs.push(dm.enqueue(rom, item.platformSlug));
+        roms.push({ rom, rommSlug: item.platformSlug });
       }
-      return jobs;
+      return dm.enqueueMany(roms);
     },
   );
 
@@ -446,28 +506,33 @@ function registerIpc(): void {
       let queued = 0;
       let skipped = 0;
 
-      while (offset < total) {
-        const page = await client.getRoms({
-          platformId,
-          limit: pageSize,
-          offset,
-        });
-        total = page.total;
-        for (const rom of page.items) {
-          const slug = rom.platform_slug ?? platformSlug;
-          if (isRomDownloaded(rom, index, paths.romsPath, slug, cfg.platformMapOverrides)) {
-            skipped++;
-            continue;
+      dm.beginBatch();
+      try {
+        while (offset < total) {
+          const page = await client.getRoms({
+            platformId,
+            limit: pageSize,
+            offset,
+          });
+          total = page.total;
+          for (const rom of page.items) {
+            const slug = rom.platform_slug ?? platformSlug;
+            if (isRomDownloaded(rom, index, paths.romsPath, slug, cfg.platformMapOverrides)) {
+              skipped++;
+              continue;
+            }
+            if (dm.isRomInQueue(rom.id)) {
+              skipped++;
+              continue;
+            }
+            dm.enqueue(rom, slug);
+            queued++;
           }
-          if (dm.isRomInQueue(rom.id)) {
-            skipped++;
-            continue;
-          }
-          dm.enqueue(rom, slug);
-          queued++;
+          offset += page.items.length;
+          if (page.items.length === 0) break;
         }
-        offset += page.items.length;
-        if (page.items.length === 0) break;
+      } finally {
+        dm.endBatch();
       }
 
       return { queued, skipped, total: Number.isFinite(total) ? total : queued + skipped };
@@ -532,6 +597,8 @@ function registerIpc(): void {
             paths.romsPath,
             platformSlug,
             cfg.platformMapOverrides,
+            paths.rdHomePath,
+            paths.downloadedMediaPath,
           );
           results[idx] = {
             ...rom,
@@ -626,16 +693,17 @@ function installRommAssetAuth(): void {
   });
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   log.app("started", { version: app.getVersion(), logFile: getAppLogPath() });
   installRommAssetAuth();
   registerIpc();
   createWindow();
+  // Fallback if the user never hits the library (e.g. opens Downloads first).
+  setTimeout(() => scheduleQueueRestore(), 3000);
   app.on("before-quit", (e) => {
     if (quitting) return;
-    if (!hasActiveTransfers()) return;
     e.preventDefault();
-    void confirmQuit(mainWindow);
+    void requestAppQuit(mainWindow);
   });
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

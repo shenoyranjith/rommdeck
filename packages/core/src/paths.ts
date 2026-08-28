@@ -29,6 +29,10 @@ export function getAppLogPath(): string {
   return join(getLogsDir(), "rommdeck.log");
 }
 
+export function getDownloadQueuePath(): string {
+  return join(getDataDir(), "download-queue.json");
+}
+
 export function getDefaultRetroDeckJsonPath(): string {
   return join(
     homedir(),

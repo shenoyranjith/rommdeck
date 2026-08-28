@@ -52,11 +52,14 @@ export function useActiveDownloads(): Map<number, ActiveDownloadStatus> {
       });
     });
 
+    let raf = 0;
     const offQueue = getApi().onDownloadQueue((jobs) => {
-      apply(jobs as QueueJob[]);
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => apply(jobs as QueueJob[]));
     });
 
     return () => {
+      cancelAnimationFrame(raf);
       offJob();
       offQueue();
     };
