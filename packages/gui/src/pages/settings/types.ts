@@ -17,7 +17,7 @@ export interface SettingsConfig {
     deviceId: number | null;
     deviceName: string;
   };
-  ui: { theme: UiTheme };
+  ui: { theme: UiTheme; scanlines: boolean; scanlineStrength: number };
   platformMapOverrides: Record<string, string>;
 }
 

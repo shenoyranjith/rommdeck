@@ -4,8 +4,10 @@ import { HashRouter } from "react-router-dom";
 import { App } from "./App";
 import {
   applyUiTheme,
+  applyUiCrt,
   DEFAULT_UI_THEME,
   readStoredUiTheme,
+  readStoredUiCrt,
   syncShellFrameMetrics,
 } from "./theme";
 import "./styles/themes.css";
@@ -13,6 +15,7 @@ import "./styles/app.css";
 
 // Prefer cached theme; avoid forcing candy over a stored selection before config loads.
 applyUiTheme(readStoredUiTheme() ?? DEFAULT_UI_THEME);
+applyUiCrt(readStoredUiCrt());
 syncShellFrameMetrics();
 window.addEventListener("resize", syncShellFrameMetrics);
 

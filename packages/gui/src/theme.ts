@@ -4,8 +4,23 @@ export type UiTheme = (typeof UI_THEMES)[number];
 
 export const DEFAULT_UI_THEME: UiTheme = "candy";
 
+export const DEFAULT_UI_SCANLINES = true;
+
+export const DEFAULT_UI_SCANLINE_STRENGTH = 12;
+
 /** Synced on apply so the next cold start can paint the right theme before config IPC. */
 export const UI_THEME_STORAGE_KEY = "rommdeck.ui.theme";
+
+export const UI_SCANLINES_STORAGE_KEY = "rommdeck.ui.scanlines";
+
+export const UI_SCANLINE_STRENGTH_STORAGE_KEY = "rommdeck.ui.scanlineStrength";
+
+export const UI_CRT_EVENT = "rommdeck:ui-crt";
+
+export interface UiCrtSettings {
+  scanlines: boolean;
+  scanlineStrength: number;
+}
 
 export const UI_THEME_LABELS: Record<UiTheme, string> = {
   candy: "Candy",
@@ -44,6 +59,11 @@ export function isUiTheme(value: unknown): value is UiTheme {
   );
 }
 
+export function clampScanlineStrength(value: number): number {
+  if (!Number.isFinite(value)) return DEFAULT_UI_SCANLINE_STRENGTH;
+  return Math.min(100, Math.max(0, Math.round(value)));
+}
+
 export function readStoredUiTheme(): UiTheme | null {
   try {
     const raw = localStorage.getItem(UI_THEME_STORAGE_KEY);
@@ -51,6 +71,34 @@ export function readStoredUiTheme(): UiTheme | null {
   } catch {
     return null;
   }
+}
+
+export function readStoredUiScanlines(): boolean {
+  try {
+    const raw = localStorage.getItem(UI_SCANLINES_STORAGE_KEY);
+    if (raw === "0") return false;
+    if (raw === "1") return true;
+    return DEFAULT_UI_SCANLINES;
+  } catch {
+    return DEFAULT_UI_SCANLINES;
+  }
+}
+
+export function readStoredScanlineStrength(): number {
+  try {
+    const raw = localStorage.getItem(UI_SCANLINE_STRENGTH_STORAGE_KEY);
+    if (raw === null) return DEFAULT_UI_SCANLINE_STRENGTH;
+    return clampScanlineStrength(Number(raw));
+  } catch {
+    return DEFAULT_UI_SCANLINE_STRENGTH;
+  }
+}
+
+export function readStoredUiCrt(): UiCrtSettings {
+  return {
+    scanlines: readStoredUiScanlines(),
+    scanlineStrength: readStoredScanlineStrength(),
+  };
 }
 
 /** Apply theme on <html data-theme="…"> and cache for instant next launch. */
@@ -66,4 +114,29 @@ export function applyUiTheme(theme: UiTheme): void {
   } catch {
     /* preload / non-Electron */
   }
+}
+
+/** Apply CRT overlay settings; notifies listeners via {@link UI_CRT_EVENT}. */
+export function applyUiCrt(settings: UiCrtSettings): void {
+  const scanlineStrength = clampScanlineStrength(settings.scanlineStrength);
+  const scanlines = settings.scanlines;
+  document.documentElement.dataset.scanlines = scanlines ? "on" : "off";
+  document.documentElement.style.setProperty(
+    "--crt-scanline-opacity",
+    String(scanlineStrength / 100),
+  );
+  try {
+    localStorage.setItem(UI_SCANLINES_STORAGE_KEY, scanlines ? "1" : "0");
+    localStorage.setItem(
+      UI_SCANLINE_STRENGTH_STORAGE_KEY,
+      String(scanlineStrength),
+    );
+  } catch {
+    /* ignore quota / private mode */
+  }
+  window.dispatchEvent(
+    new CustomEvent<UiCrtSettings>(UI_CRT_EVENT, {
+      detail: { scanlines, scanlineStrength },
+    }),
+  );
 }

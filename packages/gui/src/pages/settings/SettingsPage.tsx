@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { getApi } from "../../api";
 import { Alert } from "../../components/ui";
-import { applyUiTheme, isUiTheme, type UiTheme } from "../../theme";
+import {
+  applyUiTheme,
+  applyUiCrt,
+  clampScanlineStrength,
+  isUiTheme,
+  DEFAULT_UI_SCANLINES,
+  DEFAULT_UI_SCANLINE_STRENGTH,
+  type UiTheme,
+} from "../../theme";
 import { AppearanceSection } from "./AppearanceSection";
 import { AutoSyncSection } from "./AutoSyncSection";
 import { RetrodeckSection } from "./RetrodeckSection";
@@ -11,6 +19,21 @@ import { SettingsHeader } from "./SettingsHeader";
 import { SettingsSectionNav } from "./SettingsSectionNav";
 import type { PathsInfo, SettingsConfig } from "./types";
 import { useDebouncedCallback } from "./useDebouncedCallback";
+
+function normalizeUi(
+  ui: SettingsConfig["ui"] | undefined,
+): SettingsConfig["ui"] {
+  return {
+    theme: isUiTheme(ui?.theme) ? ui.theme : "candy",
+    scanlines:
+      typeof ui?.scanlines === "boolean" ? ui.scanlines : DEFAULT_UI_SCANLINES,
+    scanlineStrength: clampScanlineStrength(
+      typeof ui?.scanlineStrength === "number"
+        ? ui.scanlineStrength
+        : DEFAULT_UI_SCANLINE_STRENGTH,
+    ),
+  };
+}
 
 export function SettingsPage() {
   const [cfg, setCfg] = useState<SettingsConfig | null>(null);
@@ -26,10 +49,13 @@ export function SettingsPage() {
   useEffect(() => {
     void (async () => {
       const c = (await getApi().getConfig()) as SettingsConfig;
-      const theme = isUiTheme(c.ui?.theme) ? c.ui.theme : "candy";
-      const normalized = { ...c, ui: { theme } };
-      setCfg(normalized);
-      applyUiTheme(theme);
+      const ui = normalizeUi(c.ui);
+      setCfg({ ...c, ui });
+      applyUiTheme(ui.theme);
+      applyUiCrt({
+        scanlines: ui.scanlines,
+        scanlineStrength: ui.scanlineStrength,
+      });
       setOverridesText(JSON.stringify(c.platformMapOverrides ?? {}, null, 2));
       setPaths((await getApi().getRetroDeckPaths()) as PathsInfo);
     })();
@@ -39,7 +65,7 @@ export function SettingsPage() {
     async (partial: Partial<SettingsConfig>) => {
       try {
         const next = (await getApi().saveConfig(partial)) as SettingsConfig;
-        setCfg(next);
+        setCfg({ ...next, ui: normalizeUi(next.ui) });
         setError(null);
         if (partial.retrodeck) {
           setPaths((await getApi().getRetroDeckPaths()) as PathsInfo);
@@ -84,10 +110,35 @@ export function SettingsPage() {
     );
   }
 
+  const applyCrtFromUi = (ui: SettingsConfig["ui"]) => {
+    applyUiCrt({
+      scanlines: ui.scanlines,
+      scanlineStrength: ui.scanlineStrength,
+    });
+  };
+
   const setTheme = async (theme: UiTheme) => {
+    const ui = { ...cfg.ui, theme };
     applyUiTheme(theme);
-    setCfg({ ...cfg, ui: { theme } });
-    await persistPartial({ ui: { theme } });
+    setCfg({ ...cfg, ui });
+    await persistPartial({ ui });
+  };
+
+  const setScanlines = async (scanlines: boolean) => {
+    const ui = { ...cfg.ui, scanlines };
+    applyCrtFromUi(ui);
+    setCfg({ ...cfg, ui });
+    await persistPartial({ ui });
+  };
+
+  const setScanlineStrength = (scanlineStrength: number) => {
+    const ui = {
+      ...cfg.ui,
+      scanlineStrength: clampScanlineStrength(scanlineStrength),
+    };
+    applyCrtFromUi(ui);
+    setCfg({ ...cfg, ui });
+    debouncedPersist({ ui });
   };
 
   const updateRomm = (romm: SettingsConfig["romm"]) => {
@@ -133,7 +184,11 @@ export function SettingsPage() {
         return (
           <AppearanceSection
             theme={cfg.ui.theme}
+            scanlines={cfg.ui.scanlines}
+            scanlineStrength={cfg.ui.scanlineStrength}
             onThemeChange={(theme) => void setTheme(theme)}
+            onScanlinesChange={(enabled) => void setScanlines(enabled)}
+            onScanlineStrengthChange={setScanlineStrength}
           />
         );
       case "romm":

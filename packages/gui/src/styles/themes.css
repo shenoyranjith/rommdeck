@@ -216,6 +216,18 @@ body {
   app-region: no-drag;
 }
 
+/* CRT scanline overlay on the app shell. Opacity from --crt-scanline-opacity (0–1). */
+.crt-scanlines {
+  background-image: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.55) 2px,
+    rgba(0, 0, 0, 0.55) 3px
+  );
+  opacity: var(--crt-scanline-opacity, 0.12);
+}
+
 /* Sidebar RD mark — neon bloom (frame + letters are drawn in SVG). */
 .brand-mark {
   display: block;

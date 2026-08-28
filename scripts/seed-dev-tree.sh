@@ -41,7 +41,9 @@ if [[ ! -f "$MAIN_CFG" ]]; then
     "deviceName": "RommDeck"
   },
   "ui": {
-    "theme": "candy"
+    "theme": "candy",
+    "scanlines": true,
+    "scanlineStrength": 12
   },
   "platformMapOverrides": {}
 }

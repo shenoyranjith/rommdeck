@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="candy">
+<html lang="en" data-theme="candy" data-scanlines="on">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -11,6 +11,19 @@
         var t = localStorage.getItem("rommdeck.ui.theme");
         if (t === "candy" || t === "gold" || t === "vector" || t === "mint") {
           document.documentElement.dataset.theme = t;
+        }
+        var s = localStorage.getItem("rommdeck.ui.scanlines");
+        if (s === "0") document.documentElement.dataset.scanlines = "off";
+        else if (s === "1") document.documentElement.dataset.scanlines = "on";
+        var p = localStorage.getItem("rommdeck.ui.scanlineStrength");
+        if (p !== null && p !== "") {
+          var n = Math.min(100, Math.max(0, Math.round(Number(p))));
+          if (Number.isFinite(n)) {
+            document.documentElement.style.setProperty(
+              "--crt-scanline-opacity",
+              String(n / 100),
+            );
+          }
         }
       } catch (e) {}
     </script>

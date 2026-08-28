@@ -15,7 +15,7 @@ import {
 } from "./components/icons";
 import { cn } from "./lib/cn";
 import { getApi } from "./api";
-import { applyUiTheme, isUiTheme, DEFAULT_UI_THEME } from "./theme";
+import { applyUiTheme, applyUiCrt, isUiTheme, DEFAULT_UI_THEME, readStoredUiCrt, UI_CRT_EVENT, type UiCrtSettings } from "./theme";
 import { useDownloadInventorySync } from "./hooks/useDownloadInventorySync";
 import { ConfirmProvider } from "./components/ConfirmProvider";
 
@@ -28,7 +28,16 @@ const NAV = [
 
 export function App() {
   const [appVersion, setAppVersion] = useState<string | null>(null);
+  const [crt, setCrt] = useState<UiCrtSettings>(readStoredUiCrt);
   useDownloadInventorySync();
+
+  useEffect(() => {
+    const onCrt = (e: Event) => {
+      setCrt((e as CustomEvent<UiCrtSettings>).detail);
+    };
+    window.addEventListener(UI_CRT_EVENT, onCrt);
+    return () => window.removeEventListener(UI_CRT_EVENT, onCrt);
+  }, []);
 
   useEffect(() => {
     void (async () => {
@@ -37,6 +46,16 @@ export function App() {
         applyUiTheme(
           isUiTheme(cfg.ui?.theme) ? cfg.ui.theme : DEFAULT_UI_THEME,
         );
+        applyUiCrt({
+          scanlines:
+            typeof cfg.ui?.scanlines === "boolean"
+              ? cfg.ui.scanlines
+              : readStoredUiCrt().scanlines,
+          scanlineStrength:
+            typeof cfg.ui?.scanlineStrength === "number"
+              ? cfg.ui.scanlineStrength
+              : readStoredUiCrt().scanlineStrength,
+        });
       } catch {
         applyUiTheme(DEFAULT_UI_THEME);
       }
@@ -51,15 +70,12 @@ export function App() {
   return (
     <ConfirmProvider>
       <div className="relative h-full w-full min-h-0 min-w-0 overflow-hidden bg-bg0 text-text">
-      {/* CRT scanlines */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 z-50 opacity-[0.06]"
-        style={{
-          backgroundImage:
-            "repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.55) 2px, rgba(0,0,0,0.55) 3px)",
-        }}
-      />
+      {crt.scanlines && (
+        <div
+          aria-hidden
+          className="crt-scanlines pointer-events-none absolute inset-0 z-50"
+        />
+      )}
 
       <div className="relative z-10 flex h-full min-h-0">
         {/* Drag strip for frameless window (controls are no-drag) */}

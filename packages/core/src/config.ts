@@ -33,6 +33,10 @@ export interface SyncConfig {
 
 export interface UiConfig {
   theme: UiTheme;
+  /** CRT scanline overlay on the app shell */
+  scanlines: boolean;
+  /** Overlay opacity as 0–100 (maps to CSS opacity) */
+  scanlineStrength: number;
 }
 
 export interface RommDeckConfig {
@@ -66,6 +70,8 @@ export const DEFAULT_CONFIG: RommDeckConfig = {
   },
   ui: {
     theme: "candy",
+    scanlines: true,
+    scanlineStrength: 12,
   },
   platformMapOverrides: {},
 };
@@ -107,6 +113,24 @@ export function loadConfig(): RommDeckConfig {
   // Normalize unknown / missing theme from older configs
   if (!UI_THEMES.includes(cfg.ui?.theme)) {
     cfg = { ...cfg, ui: { ...cfg.ui, theme: DEFAULT_CONFIG.ui.theme } };
+  }
+  if (typeof cfg.ui?.scanlines !== "boolean") {
+    cfg = { ...cfg, ui: { ...cfg.ui, scanlines: DEFAULT_CONFIG.ui.scanlines } };
+  }
+  const strength = cfg.ui?.scanlineStrength;
+  if (typeof strength !== "number" || !Number.isFinite(strength)) {
+    cfg = {
+      ...cfg,
+      ui: { ...cfg.ui, scanlineStrength: DEFAULT_CONFIG.ui.scanlineStrength },
+    };
+  } else {
+    cfg = {
+      ...cfg,
+      ui: {
+        ...cfg.ui,
+        scanlineStrength: Math.min(100, Math.max(0, Math.round(strength))),
+      },
+    };
   }
 
   return cfg;
