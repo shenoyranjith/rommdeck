@@ -35,13 +35,22 @@ export function DownloadToolbar({
       </div>
       <div className="flex flex-wrap items-center gap-2">
         {hasFailed && (
-          <button
-            type="button"
-            className={btnClass}
-            onClick={() => void getApi().clearFailedDownloads()}
-          >
-            Clear failed
-          </button>
+          <>
+            <button
+              type="button"
+              className={btnClass}
+              onClick={() => void getApi().retryAllFailedDownloads()}
+            >
+              Retry all
+            </button>
+            <button
+              type="button"
+              className={btnClass}
+              onClick={() => void getApi().clearFailedDownloads()}
+            >
+              Clear failed
+            </button>
+          </>
         )}
         {hasActive && (
           <button

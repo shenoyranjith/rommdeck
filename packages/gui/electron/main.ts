@@ -13,6 +13,8 @@ import {
   resolveRetroDeckPaths,
   DownloadManager,
   deleteLocalRom,
+  isGamelistWriteActive,
+  shutdownGamelistWrites,
   getRomLocalStatus,
   isRomDownloaded,
   readDaemonStatus,
@@ -33,19 +35,53 @@ let downloadManager: DownloadManager | null = null;
 let libraryIndex: LibraryIndex | null = null;
 let quitting = false;
 
-function activeDownloadCount(): number {
-  return downloadManager?.getActiveCount() ?? 0;
+function hasActiveTransfers(): boolean {
+  if (downloadManager?.hasActiveWork()) return true;
+  return isGamelistWriteActive();
 }
 
-async function confirmQuit(win: BrowserWindow | null): Promise<boolean> {
-  const n = activeDownloadCount();
-  if (n === 0) return true;
+function formatTransferDetail(b: {
+  downloading: number;
+  queued: number;
+  metadata: number;
+  gamelistWriteActive: boolean;
+}): string {
+  const lines: string[] = [];
+  if (b.downloading > 0) lines.push(`${b.downloading} downloading`);
+  if (b.queued > 0) lines.push(`${b.queued} queued`);
+  if (b.metadata > 0) lines.push(`${b.metadata} writing metadata`);
+  if (b.gamelistWriteActive) lines.push("gamelist.xml write in progress");
+  const summary = lines.length > 0 ? lines.join(" · ") : "transfers in progress";
+  return `${summary}\n\nQuit anyway? ROM files already on disk are kept. Incomplete downloads and metadata may need to be retried.`;
+}
+
+async function performQuit(win: BrowserWindow | null): Promise<void> {
+  await downloadManager?.prepareForShutdown();
+  await shutdownGamelistWrites();
+  quitting = true;
+  if (win && !win.isDestroyed()) win.close();
+  else app.quit();
+}
+
+async function confirmQuit(win: BrowserWindow | null): Promise<void> {
+  if (!hasActiveTransfers()) {
+    await performQuit(win);
+    return;
+  }
+
+  const breakdown = downloadManager?.getActiveBreakdown() ?? {
+    downloading: 0,
+    queued: 0,
+    metadata: 0,
+    gamelistWriteActive: isGamelistWriteActive(),
+    total: 0,
+  };
   const target = win && !win.isDestroyed() ? win : BrowserWindow.getFocusedWindow();
   const opts = {
     type: "warning" as const,
-    title: "Active downloads",
-    message: `You still have ${n} download(s) in progress.`,
-    detail: "Quit anyway? Incomplete downloads may need to be retried.",
+    title: "Active transfers",
+    message: "RommDeck still has work in progress.",
+    detail: formatTransferDetail(breakdown),
     buttons: ["Stay", "Quit anyway"],
     defaultId: 0,
     cancelId: 0,
@@ -54,20 +90,15 @@ async function confirmQuit(win: BrowserWindow | null): Promise<boolean> {
     target && !target.isDestroyed()
       ? await dialog.showMessageBox(target, opts)
       : await dialog.showMessageBox(opts);
-  return response === 1;
+  if (response === 1) await performQuit(win);
 }
 
 function attachWindowCloseGuard(win: BrowserWindow): void {
   win.on("close", (e) => {
     if (quitting) return;
-    if (activeDownloadCount() === 0) return;
+    if (!hasActiveTransfers()) return;
     e.preventDefault();
-    void confirmQuit(win).then((ok) => {
-      if (ok) {
-        quitting = true;
-        win.close();
-      }
-    });
+    void confirmQuit(win);
   });
 }
 
@@ -106,11 +137,13 @@ function getDownloadManager(): DownloadManager {
       index: getIndex(),
       romsPath: paths.romsPath,
       rdHomePath: paths.rdHomePath,
+      downloadedMediaPath: paths.downloadedMediaPath,
       platformMapOverrides: cfg.platformMapOverrides,
     });
     log.download("DownloadManager initialized", {
       romsPath: paths.romsPath,
       rdHomePath: paths.rdHomePath,
+      downloadedMediaPath: paths.downloadedMediaPath,
       rdHomeSource: paths.source,
     });
     downloadManager.on("job", (job) => {
@@ -234,6 +267,7 @@ function registerIpc(): void {
   ipcMain.removeHandler("downloads:cancel");
   ipcMain.removeHandler("downloads:cancelAll");
   ipcMain.removeHandler("downloads:retry");
+  ipcMain.removeHandler("downloads:retryAll");
   ipcMain.removeHandler("downloads:dismissFailed");
   ipcMain.removeHandler("downloads:clearFailed");
   ipcMain.removeHandler("library:deleteLocal");
@@ -450,6 +484,9 @@ function registerIpc(): void {
   ipcMain.handle("downloads:retry", async (_e, jobId: string) => {
     return getDownloadManager().retry(jobId);
   });
+  ipcMain.handle("downloads:retryAll", async () => {
+    return getDownloadManager().retryAll();
+  });
   ipcMain.handle("downloads:dismissFailed", (_e, jobId: string) => {
     getDownloadManager().dismissFailed(jobId);
   });
@@ -457,8 +494,13 @@ function registerIpc(): void {
     getDownloadManager().clearFailed();
   });
 
-  ipcMain.handle("library:deleteLocal", (_e, romId: number) => {
-    return deleteLocalRom(getIndex(), romId);
+  ipcMain.handle("library:deleteLocal", async (_e, romId: number) => {
+    const cfg = loadConfig();
+    const paths = resolveRetroDeckPaths(cfg.retrodeck);
+    return deleteLocalRom(getIndex(), romId, {
+      rdHomePath: paths.rdHomePath,
+      downloadedMediaPath: paths.downloadedMediaPath,
+    });
   });
 
   ipcMain.handle("library:downloadedIds", (_e, platformSlug?: string) => {
@@ -591,14 +633,9 @@ app.whenReady().then(() => {
   createWindow();
   app.on("before-quit", (e) => {
     if (quitting) return;
-    if (activeDownloadCount() === 0) return;
+    if (!hasActiveTransfers()) return;
     e.preventDefault();
-    void confirmQuit(mainWindow).then((ok) => {
-      if (ok) {
-        quitting = true;
-        app.quit();
-      }
-    });
+    void confirmQuit(mainWindow);
   });
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

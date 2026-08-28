@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { getDefaultRetroDeckJsonPath } from "./paths.js";
 import type { RetroDeckConfig } from "./config.js";
 
@@ -8,6 +9,7 @@ export interface RetroDeckPaths {
   romsPath: string;
   savesPath: string;
   statesPath: string;
+  downloadedMediaPath: string;
   source: "auto" | "override" | "fixture";
 }
 
@@ -17,6 +19,7 @@ interface RetroDeckJson {
     roms_path?: string;
     saves_path?: string;
     states_path?: string;
+    downloaded_media_path?: string;
   };
 }
 
@@ -50,6 +53,9 @@ export function resolveRetroDeckPaths(cfg: RetroDeckConfig): RetroDeckPaths {
   const savesPath = cfg.savesPath || paths.saves_path || "";
   const statesPath = cfg.statesPath || paths.states_path || "";
   const rdHomePath = paths.rd_home_path || "";
+  const downloadedMediaPath =
+    paths.downloaded_media_path ||
+    (rdHomePath ? join(rdHomePath, "ES-DE", "downloaded_media") : "");
 
   const hasOverride = Boolean(cfg.romsPath || cfg.savesPath || cfg.statesPath);
   const isFixture = usedPath.includes("fixtures") || usedPath.includes("rommdeck-dev");
@@ -60,6 +66,7 @@ export function resolveRetroDeckPaths(cfg: RetroDeckConfig): RetroDeckPaths {
     romsPath,
     savesPath,
     statesPath,
+    downloadedMediaPath,
     source: hasOverride ? "override" : isFixture ? "fixture" : "auto",
   };
 }

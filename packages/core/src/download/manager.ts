@@ -6,7 +6,8 @@ import type { RommRom } from "../romm/types.js";
 import { LibraryIndex } from "../db/index.js";
 import { downloadTargetPath, rommSlugToEsdeFolder } from "../platform-map.js";
 import { verifyRomFileHash } from "../hash.js";
-import { syncEsdeMetadata } from "../esde/metadata.js";
+import { syncEsdeMetadata, removeEsdeMetadata } from "../esde/metadata.js";
+import { isGamelistWriteActive, shutdownGamelistWrites } from "../esde/gamelist-queue.js";
 import { expectedHashesForFile, hashesMatchRom, romHasExpectedHash } from "./hashes.js";
 import { log } from "../log.js";
 
@@ -41,6 +42,7 @@ export interface DownloadManagerOptions {
   index: LibraryIndex;
   romsPath: string;
   rdHomePath?: string;
+  downloadedMediaPath?: string;
   platformMapOverrides?: Record<string, string>;
 }
 
@@ -76,11 +78,22 @@ function isActiveDownloadStatus(status: DownloadStatus): boolean {
   return status === "queued" || status === "downloading" || status === "metadata";
 }
 
+export interface ActiveTransferBreakdown {
+  downloading: number;
+  queued: number;
+  metadata: number;
+  gamelistWriteActive: boolean;
+  total: number;
+}
+
 export class DownloadManager extends EventEmitter {
   private queue: DownloadJob[] = [];
   private failedJobs: DownloadJob[] = [];
   private active: DownloadJob | null = null;
   private activeAbort: AbortController | null = null;
+  /** Jobs waiting for or running ES-DE metadata sync (downloads may continue). */
+  private metadataJobs: DownloadJob[] = [];
+  private metadataAbort = new Map<string, AbortController>();
   private cancelled = new Set<string>();
   private running = false;
   private opts: DownloadManagerOptions;
@@ -92,9 +105,13 @@ export class DownloadManager extends EventEmitter {
     this.opts = opts;
   }
 
-  /** Active job first, then queued — top-to-bottom FIFO in the UI. */
+  /** Active download, then metadata queue, then download queue — top-to-bottom FIFO in the UI. */
   getJobs(): DownloadJob[] {
-    return [...(this.active ? [this.active] : []), ...this.queue];
+    return [
+      ...(this.active ? [this.active] : []),
+      ...this.metadataJobs,
+      ...this.queue,
+    ];
   }
 
   getFailedJobs(): DownloadJob[] {
@@ -111,6 +128,38 @@ export class DownloadManager extends EventEmitter {
 
   getActiveCount(): number {
     return this.getJobs().filter((j) => isActiveDownloadStatus(j.status)).length;
+  }
+
+  getActiveBreakdown(): ActiveTransferBreakdown {
+    const jobs = this.getJobs();
+    const downloading = jobs.filter((j) => j.status === "downloading").length;
+    const queued = jobs.filter((j) => j.status === "queued").length;
+    const metadata = jobs.filter((j) => j.status === "metadata").length;
+    const gamelistWriteActive = isGamelistWriteActive();
+    return {
+      downloading,
+      queued,
+      metadata,
+      gamelistWriteActive,
+      total: downloading + queued + metadata,
+    };
+  }
+
+  hasActiveWork(): boolean {
+    const b = this.getActiveBreakdown();
+    return b.total > 0 || b.gamelistWriteActive;
+  }
+
+  /** Cancel transfers and drain or abort in-flight gamelist writes before app exit. */
+  async prepareForShutdown(): Promise<void> {
+    log.download("prepareForShutdown");
+    if (this.active) this.cancel(this.active.id);
+    for (const job of [...this.queue]) this.cancel(job.id);
+    for (const job of [...this.metadataJobs]) {
+      this.cancelled.add(job.id);
+      this.metadataAbort.get(job.id)?.abort();
+    }
+    await shutdownGamelistWrites();
   }
 
   /** Active queue job for a rom_id, if any. */
@@ -187,6 +236,17 @@ export class DownloadManager extends EventEmitter {
       this.activeAbort?.abort();
       this.emit("job", { ...this.active });
       this.emit("queue", this.getJobs());
+      return;
+    }
+
+    const metadata = this.metadataJobs.find((j) => j.id === jobId);
+    if (metadata) {
+      metadata.status = "cancelled";
+      this.metadataAbort.get(jobId)?.abort();
+      this.metadataJobs = this.metadataJobs.filter((j) => j.id !== jobId);
+      this.metadataAbort.delete(jobId);
+      this.emit("job", { ...metadata });
+      this.emit("queue", this.getJobs());
     }
   }
 
@@ -220,6 +280,18 @@ export class DownloadManager extends EventEmitter {
     return this.enqueue(rom, failed.rommSlug);
   }
 
+  async retryAll(): Promise<DownloadJob[]> {
+    const toRetry = [...this.failedJobs];
+    if (toRetry.length === 0) return [];
+    log.download("retrying all failed jobs", { count: toRetry.length });
+    const results: DownloadJob[] = [];
+    for (const failed of toRetry) {
+      const job = await this.retry(failed.id);
+      if (job) results.push(job);
+    }
+    return results;
+  }
+
   private async pump(): Promise<void> {
     if (this.running) return;
     this.running = true;
@@ -239,8 +311,16 @@ export class DownloadManager extends EventEmitter {
         const abort = new AbortController();
         this.activeAbort = abort;
         try {
-          await this.runJob(job, abort.signal);
-          job.status = "done";
+          const metadataQueued = await this.runJob(job, abort.signal);
+          if (metadataQueued) {
+            this.active = null;
+            this.romByJobId.delete(job.id);
+            this.emit("queue", this.getJobs());
+            continue;
+          }
+          if (!this.cancelled.has(job.id)) {
+            job.status = "done";
+          }
         } catch (e) {
           if (this.cancelled.has(job.id)) {
             job.status = "cancelled";
@@ -278,6 +358,71 @@ export class DownloadManager extends EventEmitter {
     }
   }
 
+  private scheduleMetadata(job: DownloadJob): void {
+    const { client, rdHomePath, downloadedMediaPath, platformMapOverrides = {} } = this.opts;
+    if (!rdHomePath) return;
+
+    job.status = "metadata";
+    this.metadataJobs.push(job);
+    log.esde("metadata queued", {
+      jobId: job.id,
+      romId: job.romId,
+      rommSlug: job.rommSlug,
+      primaryFilename: job.filenames[0] ?? "",
+      pendingMetadata: this.metadataJobs.length,
+    });
+    this.emit("job", job);
+
+    const abort = new AbortController();
+    this.metadataAbort.set(job.id, abort);
+
+    void syncEsdeMetadata({
+      client,
+      romId: job.romId,
+      rommSlug: job.rommSlug,
+      primaryFilename: job.filenames[0] ?? "",
+      rdHomePath,
+      downloadedMediaPath,
+      platformMapOverrides,
+      signal: abort.signal,
+    })
+      .then(() => this.finishMetadataJob(job.id))
+      .catch((e) => this.finishMetadataJob(job.id, e));
+  }
+
+  private finishMetadataJob(jobId: string, error?: unknown): void {
+    const job = this.metadataJobs.find((j) => j.id === jobId);
+    if (!job) return;
+
+    this.metadataJobs = this.metadataJobs.filter((j) => j.id !== jobId);
+    this.metadataAbort.delete(jobId);
+
+    if (this.cancelled.has(jobId)) {
+      job.status = "cancelled";
+    } else if (error) {
+      job.status = "error";
+      job.error = error instanceof Error ? error.message : String(error);
+      this.failedJobs.push({ ...job });
+      this.emitFailed();
+      log.download("metadata job failed", {
+        jobId: job.id,
+        romId: job.romId,
+        error: job.error,
+      });
+    } else {
+      job.status = "done";
+      log.esde("metadata phase complete", { romId: job.romId, jobId: job.id });
+    }
+
+    log.download("metadata job finished", {
+      jobId: job.id,
+      romId: job.romId,
+      status: job.status,
+    });
+    this.emit("job", job);
+    this.emit("queue", this.getJobs());
+  }
+
   private removePartFiles(job: DownloadJob): void {
     const { romsPath, platformMapOverrides = {} } = this.opts;
     for (const filename of job.filenames) {
@@ -305,7 +450,7 @@ export class DownloadManager extends EventEmitter {
     }
   }
 
-  private async runJob(job: DownloadJob, signal: AbortSignal): Promise<void> {
+  private async runJob(job: DownloadJob, signal: AbortSignal): Promise<boolean> {
     const { client, index, romsPath, rdHomePath, platformMapOverrides = {} } = this.opts;
     const rom = this.romByJobId.get(job.id) ?? (await client.getRom(job.romId));
     const esde = rommSlugToEsdeFolder(job.rommSlug, platformMapOverrides);
@@ -398,36 +543,18 @@ export class DownloadManager extends EventEmitter {
       });
 
       if (rdHomePath) {
-        log.esde("metadata phase starting", {
-          romId: job.romId,
-          rdHomePath,
-          esdeFolder: esde,
-          primaryFilename: job.filenames[0] ?? "",
-        });
-        job.status = "metadata";
-        this.emit("job", job);
-        this.emit("queue", this.getJobs());
-        await syncEsdeMetadata({
-          client,
-          romId: job.romId,
-          rommSlug: job.rommSlug,
-          primaryFilename: job.filenames[0] ?? "",
-          rdHomePath,
-          platformMapOverrides,
-          signal,
-        });
-        if (this.cancelled.has(job.id)) throw new Error("cancelled");
-        log.esde("metadata phase complete", { romId: job.romId });
-      } else {
-        log.esde("metadata skipped (no rdHomePath)", { romId: job.romId });
+        this.scheduleMetadata(job);
+        return true;
       }
 
+      log.esde("metadata skipped (no rdHomePath)", { romId: job.romId });
       log.download("runJob complete", {
         jobId: job.id,
         romId: job.romId,
         files: completedFiles.length,
         indexed: true,
       });
+      return false;
     } catch (e) {
       const allFilesWritten = writtenDests.length === job.filenames.length;
       log.download("runJob error", {
@@ -450,10 +577,11 @@ export class DownloadManager extends EventEmitter {
 }
 
 /** Delete local ROM files for a rom_id; never touches RomM. */
-export function deleteLocalRom(
+export async function deleteLocalRom(
   index: LibraryIndex,
   romId: number,
-): { removed: string[]; missing: string[] } {
+  esde?: { rdHomePath: string; downloadedMediaPath?: string },
+): Promise<{ removed: string[]; missing: string[]; esdeCleaned: number }> {
   const rows = index.deleteByRomId(romId);
   const removed: string[] = [];
   const missing: string[] = [];
@@ -465,7 +593,26 @@ export function deleteLocalRom(
       missing.push(row.path);
     }
   }
-  return { removed, missing };
+
+  let esdeCleaned = 0;
+  if (esde?.rdHomePath && rows.length > 0) {
+    const byFolder = new Map<string, string>();
+    for (const row of rows) {
+      if (!byFolder.has(row.esde_folder)) byFolder.set(row.esde_folder, row.filename);
+    }
+    for (const [esdeFolder, primaryFilename] of byFolder) {
+      const result = await removeEsdeMetadata({
+        rdHomePath: esde.rdHomePath,
+        downloadedMediaPath: esde.downloadedMediaPath,
+        esdeFolder,
+        primaryFilename,
+      });
+      if (result.gamelistRemoved) esdeCleaned += 1;
+      esdeCleaned += result.mediaRemoved.length;
+    }
+  }
+
+  return { removed, missing, esdeCleaned };
 }
 
 /** Rescan an ES-DE platform folder and return filenames present on disk. */

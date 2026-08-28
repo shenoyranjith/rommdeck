@@ -9,5 +9,6 @@ export * from "./romm/client.js";
 export * from "./db/index.js";
 export * from "./download/manager.js";
 export * from "./esde/metadata.js";
+export { isGamelistWriteActive, shutdownGamelistWrites } from "./esde/gamelist-queue.js";
 export * from "./sync/protocol.js";
 export * from "./daemon-status.js";

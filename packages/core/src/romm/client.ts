@@ -28,6 +28,9 @@ export interface RommClientOptions {
   apiToken: string;
 }
 
+/** RomM serves stored media under this path prefix (see FRONTEND_RESOURCES_PATH). */
+const ROMM_RESOURCES_PREFIX = "/assets/romm/resources";
+
 export class RommClient {
   readonly baseUrl: string;
   private readonly token: string;
@@ -44,8 +47,39 @@ export class RommClient {
     return h;
   }
 
+  /** Join configured RomM base URL with an absolute or root-relative path. */
+  private joinBaseUrl(path: string): string {
+    if (/^https?:\/\//i.test(path)) return path;
+    const base = this.baseUrl.replace(/\/+$/, "");
+    return `${base}${path.startsWith("/") ? path : `/${path}`}`;
+  }
+
+  /**
+   * Normalize RomM asset references to a server-relative resources path.
+   * Covers may arrive as `/assets/romm/resources/roms/...` while videos/screenshots
+   * are sometimes bare `roms/{platform_id}/{rom_id}/...` paths.
+   */
+  private toResourcePath(assetPath: string): string {
+    const trimmed = assetPath.trim();
+    if (/^https?:\/\//i.test(trimmed)) return trimmed;
+    if (trimmed.startsWith("/assets/romm/")) return trimmed;
+    if (trimmed.startsWith("/assets/")) return trimmed;
+    const relative = trimmed.replace(/^\/+/, "");
+    return `${ROMM_RESOURCES_PREFIX}/${relative}`;
+  }
+
+  /** Build a fetchable URL; RomM asset paths often have unencoded spaces in ?ts= values. */
+  private normalizeUrl(input: string): string {
+    const trimmed = input.trim();
+    if (!trimmed) throw new TypeError("Invalid URL");
+    const absolute = /^https?:\/\//i.test(trimmed) ? trimmed : this.joinBaseUrl(trimmed);
+    const encoded = absolute.replace(/ /g, "%20");
+    return new URL(encoded).href;
+  }
+
   private url(path: string, query?: Record<string, string | number | undefined>): string {
-    const u = new URL(path.startsWith("http") ? path : `${this.baseUrl}${path}`);
+    const href = path.startsWith("http") ? this.normalizeUrl(path) : this.normalizeUrl(this.joinBaseUrl(path));
+    const u = new URL(href);
     if (query) {
       for (const [k, v] of Object.entries(query)) {
         if (v !== undefined && v !== "") u.searchParams.set(k, String(v));
@@ -132,12 +166,15 @@ export class RommClient {
     return { items, total };
   }
 
-  /** Turn RomM path_cover_* (relative) into an absolute URL on this server. */
+  /** Turn RomM asset paths into an absolute fetch URL on this server. */
   resolveAssetUrl(assetPath: string | null | undefined): string | null {
-    if (!assetPath) return null;
-    if (/^https?:\/\//i.test(assetPath)) return assetPath;
-    const path = assetPath.startsWith("/") ? assetPath : `/${assetPath}`;
-    return `${this.baseUrl}${path}`;
+    if (!assetPath?.trim()) return null;
+    try {
+      const path = this.toResourcePath(assetPath);
+      return this.normalizeUrl(path);
+    } catch {
+      return null;
+    }
   }
 
   coverUrlFor(rom: RommRom, prefer: "small" | "large" = "small"): string | null {
@@ -145,24 +182,19 @@ export class RommClient {
       return (
         this.resolveAssetUrl(rom.path_cover_large) ??
         this.resolveAssetUrl(rom.path_cover_small) ??
-        (rom.url_cover && /^https?:\/\//i.test(rom.url_cover) ? rom.url_cover : null)
+        this.resolveAssetUrl(rom.url_cover)
       );
     }
     return (
       this.resolveAssetUrl(rom.path_cover_small) ??
       this.resolveAssetUrl(rom.path_cover_large) ??
-      (rom.url_cover && /^https?:\/\//i.test(rom.url_cover) ? rom.url_cover : null)
+      this.resolveAssetUrl(rom.url_cover)
     );
   }
 
   /** Absolute logo URL for a platform (RomM-hosted path or remote url_logo). */
   logoUrlFor(platform: RommPlatform): string | null {
-    return (
-      this.resolveAssetUrl(platform.logo_path) ??
-      (platform.url_logo && /^https?:\/\//i.test(platform.url_logo)
-        ? platform.url_logo
-        : this.resolveAssetUrl(platform.url_logo))
-    );
+    return this.resolveAssetUrl(platform.logo_path) ?? this.resolveAssetUrl(platform.url_logo);
   }
 
   async getRom(id: number): Promise<RommRom> {
@@ -250,7 +282,7 @@ export class RommClient {
   }
 
   async downloadAsset(source: string, destPath: string): Promise<void> {
-    const res = await fetch(this.url(source), { headers: this.headers() });
+    const res = await fetch(this.normalizeUrl(source), { headers: this.headers() });
     if (!res.ok) {
       const text = await res.text().catch(() => "");
       throw new RommApiError(`Asset download failed: ${res.status}`, res.status, text);

@@ -27,6 +27,7 @@ export interface RommDeckApi {
   cancelDownload: (jobId: string) => Promise<void>;
   cancelAllDownloads: () => Promise<void>;
   retryDownload: (jobId: string) => Promise<unknown>;
+  retryAllFailedDownloads: () => Promise<unknown[]>;
   dismissFailedDownload: (jobId: string) => Promise<void>;
   clearFailedDownloads: () => Promise<void>;
   onDownloadJob: (cb: (job: unknown) => void) => () => void;
@@ -68,6 +69,7 @@ const api: RommDeckApi = {
   cancelDownload: (jobId) => ipcRenderer.invoke("downloads:cancel", jobId),
   cancelAllDownloads: () => ipcRenderer.invoke("downloads:cancelAll"),
   retryDownload: (jobId) => ipcRenderer.invoke("downloads:retry", jobId),
+  retryAllFailedDownloads: () => ipcRenderer.invoke("downloads:retryAll"),
   dismissFailedDownload: (jobId) => ipcRenderer.invoke("downloads:dismissFailed", jobId),
   clearFailedDownloads: () => ipcRenderer.invoke("downloads:clearFailed"),
   onDownloadJob: (cb) => {

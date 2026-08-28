@@ -20,6 +20,21 @@ export interface RommRomFile {
   sha1_hash?: string | null;
 }
 
+/** Shared metadata fields from RomM metadatum / provider payloads. */
+export interface RommMetadatum {
+  rom_id?: number;
+  genres?: string[];
+  franchises?: string[];
+  collections?: string[];
+  companies?: string[];
+  developers?: string[];
+  publishers?: string[];
+  game_modes?: string[];
+  age_ratings?: string[];
+  first_release_date?: number | null;
+  average_rating?: number | null;
+}
+
 export interface RommRom {
   id: number;
   name: string;
@@ -40,6 +55,15 @@ export interface RommRom {
   path_cover_small?: string | null;
   path_cover_large?: string | null;
   url_cover?: string | null;
+  path_video?: string | null;
+  merged_screenshots?: string[];
+  metadatum?: RommMetadatum | null;
+  igdb_metadata?: RommMetadatum | null;
+  ss_metadata?: RommMetadatum | null;
+  moby_metadata?: RommMetadatum | null;
+  launchbox_metadata?: RommMetadatum | null;
+  generated_first_release_date?: number | null;
+  generated_player_count?: string | null;
   multi?: boolean;
   files?: RommRomFile[];
   filesize?: number;
