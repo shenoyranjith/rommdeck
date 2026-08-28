@@ -114,26 +114,26 @@ Downloads land in `{roms_path}/{esde_folder}/{filename}`.
 
 Bundled map (`data/platform-map.json`) inverts RomM’s [ES-DE example](https://github.com/rommapp/romm/blob/master/examples/config.es-de.example.yml) (RomM slug → ES-DE folder), e.g. `ngc` → `gc`, `genesis` → `megadrive`. Override per slug in Settings.
 
-## ES-DE metadata (planned)
+## ES-DE metadata
 
-When a ROM download completes, RommDeck will sync metadata from RomM into RetroDECK’s ES-DE tree so games appear populated without scraping:
+When a ROM download completes, RommDeck syncs metadata from RomM into RetroDECK’s ES-DE tree so games appear populated without scraping:
 
 | Asset | Location |
 | --- | --- |
 | Gamelists | `{rd_home}/ES-DE/gamelists/{esde_folder}/gamelist.xml` |
-| Artwork | `{rd_home}/ES-DE/downloaded_media/{esde_folder}/covers/` (and marquees, fanart, screenshots) |
+| Media | `{rd_home}/ES-DE/downloaded_media/{esde_folder}/` — covers, screenshots, videos |
 
-Text fields (`name`, `desc`, `genre`, `releasedate`, developer/publisher, etc.) come from RomM’s `metadatum` / provider metadata. Covers and other art are downloaded from RomM asset URLs. Local delete removes the matching gamelist entry and media files.
+Text fields (`name`, `desc`, `genre`, `releasedate`, developer/publisher, etc.) come from RomM metadata. Local delete removes the matching gamelist entry and media files.
 
-See [`RommDeck-plan.md`](RommDeck-plan.md) for full Downloads + metadata spec.
+Logs roll at 5 MB (`~/.local/share/rommdeck/logs/rommdeck.log`, up to 9 archives).
 
-## Downloads queue (planned)
+## Downloads queue
 
-The Downloads page shows **Active** and **Failed** sections with progress, cancel, retry, and dismiss. The queue persists to `~/.local/share/rommdeck/download-queue.json` across restarts. Quitting with active downloads shows a confirmation dialog; the queue resumes on next launch.
+The Downloads page shows **Active** and **Failed** sections with progress, cancel, retry, and dismiss. The queue persists to `~/.local/share/rommdeck/download-queue.json` across restarts. Quitting with active downloads shows an in-app confirmation; the queue resumes on next launch (after platforms load).
+
+Library badges and the status bar update live when downloads finish (`useDownloadInventorySync` + inventory events).
 
 UI mockups: `docs/mockups/downloads-vector-*.png`
-
-**Known gap (fix in next pass):** Library badges and status bar do not update when a download finishes until the app is refreshed. Implementation will subscribe to download completion events and sync the catalog cache live (same pattern as local delete today).
 
 ## Scripts
 

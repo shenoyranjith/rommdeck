@@ -4,39 +4,42 @@ overview: 'Build a Linux desktop stack (Electron GUI + systemd user daemon, shar
 todos:
   - id: scaffold
     content: 'Scaffold monorepo: shared core, Electron GUI, sync daemon CLI, config + retrodeck.json detection'
-    status: pending
+    status: completed
   - id: romm-client
     content: 'Implement shared RomM API client: auth, platforms, roms list/search, content download'
-    status: pending
+    status: completed
   - id: platform-map
     content: Bundle ES-DE↔RomM slug map + Settings overrides
-    status: pending
+    status: completed
   - id: download-index
     content: Download queue into RetroDECK roms folders + SQLite local index + local delete + ES-DE metadata sync
-    status: pending
+    status: completed
   - id: library-ui
     content: 'Library UI: platforms, browse, downloaded badges, single/bulk download, selection mode'
     status: completed
   - id: downloads-ui
-    content: 'Downloads UI: queue sections, cancel/retry, persist queue, exit guard — see Downloads section'
-    status: pending
+    content: 'Downloads UI: queue sections, cancel/retry, persist queue, in-app exit guard — see Downloads section'
+    status: completed
   - id: library-live-sync
     content: 'Fix Library + StatusBar live update when a download completes (no refresh required)'
-    status: pending
+    status: completed
   - id: save-sync-core
     content: Device registration + Device Sync Protocol in shared core (manual + daemon entrypoints)
-    status: pending
+    status: completed
   - id: sync-daemon
     content: 'rommdeck-syncd + systemd --user unit: fs watch, interval poll, logs, status file'
-    status: pending
+    status: completed
   - id: sync-ui
     content: 'GUI Sync/Settings: enable auto-sync, interval, conflict policy, daemon status, Sync Now'
-    status: pending
+    status: completed
   - id: dev-env
     content: 'Config + systemd install; document Linux/RetroDECK local workflow'
-    status: pending
+    status: completed
   - id: readme
     content: 'README with setup, token scopes, systemd install, Linux/RetroDECK workflow'
+    status: completed
+  - id: save-sync-ux
+    content: 'Save/state sync rollout: interactive conflict resolution when implementing full save sync'
     status: pending
 isProject: false
 ---
@@ -165,7 +168,7 @@ Downloads land in:
 | Gamelists | `{rd_home}/ES-DE/gamelists/{esde_folder}/gamelist.xml` |
 | Media | `{rd_home}/ES-DE/downloaded_media/{esde_folder}/{type}/` |
 
-On download success, RommDeck upserts `gamelist.xml` from RomM metadata (`name`, `summary`, genres, release date, developer/publisher, etc.) and downloads cover/marquee/fanart/screenshot assets. Media filenames match the game **display name** (ES-DE v1+ convention — no image tags in XML). On local delete, remove the matching gamelist entry and media files.
+On download success, RommDeck upserts `gamelist.xml` from RomM metadata (`name`, `summary`, genres, release date, developer/publisher, etc.) and downloads cover, screenshot, and video assets when available. Media filenames match the game **display name** (ES-DE v1+ convention — no image tags in XML). On local delete, remove the matching gamelist entry and media files.
 
 Read `downloaded_media_path` from `retrodeck.json` when present; default `{rd_home_path}/ES-DE/downloaded_media`.
 
@@ -190,9 +193,9 @@ Target against RomM **5.x** OpenAPI (`/openapi.json`).
 
 1. **Setup / Settings** — RomM URL, API token (test connection), RetroDECK path (auto-detect from `retrodeck.json` + browse), platform-map overrides, sync mode (`push_pull` default), **auto-sync on/off**, interval, debounce, unattended conflict policy, daemon install/status.
 2. **Library** — **done** — left: platforms; main: ROM grid/list with cover + **Downloaded / Missing** badge; search; multi-select; bulk download/delete; status bar stats.
-3. **Downloads** — **next UI pass** — Active / Failed sections; per-row progress, cancel, retry, dismiss; toolbar **Cancel all** + **Clear failed**; persist queue to `download-queue.json`; exit alert when active jobs remain; write ROMs + ES-DE metadata on success.
-4. **Local management** — filter to downloaded; **Delete from device** removes local file(s) + ES-DE gamelist/media (never deletes on RomM); confirm dialog.
-5. **Sync** — device pair status; **Sync Now** (via core, same as daemon); live/last daemon status; conflict list for manual resolution when policy left them pending.
+3. **Downloads** — **done** — Active / Failed sections; per-row progress, cancel, retry, dismiss; toolbar **Cancel all**, **Retry all**, **Clear failed**; persist queue to `download-queue.json`; in-app exit confirm when active jobs remain; write ROMs + ES-DE metadata on success.
+4. **Local management** — **done** — filter to downloaded; **Delete from device** removes local file(s) + ES-DE gamelist/media (never deletes on RomM); in-app confirm dialog; detail-pane badges (Downloaded / Unverified / Missing metadata).
+5. **Sync** — **done (basic)** — device pair status; **Sync Now**; daemon status; conflict list when policy leaves items pending. Interactive conflict resolution ships with full save sync work.
 
 Visual direction: utility app — clear hierarchy, platform-first navigation, restrained color system (avoid purple-gradient / cream-serif AI clichés), subtle motion on queue progress and status transitions.
 
@@ -238,11 +241,11 @@ rommdeck/
 6. GUI daemon controls + conflict policy settings
 7. README (Linux/RetroDECK workflow, token scopes, systemd)
 8. ~~**UI shell + themes**~~ **done** — Vector shell implemented (sidebar, accent frame, status bar, theme picker)
-9. **Downloads UI + queue** — see section below
+9. ~~**Downloads UI + queue**~~ **done** — see section below
 
 ## UI: Arcade / CRT shell + themes
 
-**Status:** Shell + Library **done**. **Downloads** is the next UI pass (mockups committed).
+**Status:** Shell, Library, and Downloads **done**. Theme mockups remain in `docs/mockups/theme-*.png`.
 
 ### Decisions
 
@@ -274,11 +277,9 @@ rommdeck/
 | Downloads — active + failed | `docs/mockups/downloads-vector-failed.png` |
 | Downloads — empty | `docs/mockups/downloads-vector-empty.png` |
 
-Remove `docs/mockups/shell-vector.png` on Downloads implementation (library shell is shipped).
+## Downloads UI + queue
 
-## Downloads UI + queue (next pass)
-
-Visual lock: `docs/mockups/downloads-vector-*.png`. Match Library page chrome (`LibraryPage`, `LibraryToolbar`, `RomList` row styling).
+**Status:** **done** (v1). Visual reference: `docs/mockups/downloads-vector-*.png`.
 
 ### Layout
 
@@ -296,7 +297,7 @@ Job lifecycle: **queued** → **downloading** → **metadata** (ES-DE gamelist +
 | Success | Auto-clear from page after metadata completes |
 | Failed | Retain until retry or dismiss |
 | Cancelled | Discard immediately |
-| App exit (active jobs) | Electron dialog: Stay / Quit anyway; queue persisted to `~/.local/share/rommdeck/download-queue.json` |
+| App exit (active jobs) | In-app confirm: Stay / Quit anyway; queue persisted to `~/.local/share/rommdeck/download-queue.json` |
 | App restart | Restore active + failed queue; resume pump |
 
 ### Backend additions
@@ -317,44 +318,20 @@ packages/gui/src/pages/downloads/useDownloadQueue.ts
 
 ### Implementation todos (Downloads)
 
-1. **Library live sync** (bugfix — do first): subscribe to `downloads:job`; on `status === 'done'`, update badges/stats without refresh
-2. Remove `shell-vector.png`; core queue + persistence + ES-DE metadata
-3. Electron IPC + exit guard
-4. Downloads UI components + hook
-5. Smoke: download → Library badge flips to Downloaded immediately → ES-DE metadata visible → quit mid-queue → restore
+All v1 items **done**. Next major work: full save/state sync UX (including conflict resolution).
 
-### Library live sync on download (bugfix)
+### Library live sync on download
 
-**Problem:** After a ROM downloads, Library still shows **Missing** until the app is refreshed. Delete already updates live (`markCatalogRomDownloaded(..., false)` in [`useLibraryData.ts`](packages/gui/src/pages/library/useLibraryData.ts)); download success has no symmetric handler. [`DownloadsPage`](packages/gui/src/pages/DownloadsPage.tsx) listens to IPC events; Library does not. [`StatusBar`](packages/gui/src/components/StatusBar.tsx) only polls stats every 5s.
+**Status:** **done**
 
-**Fix:**
+- [`useDownloadInventorySync`](packages/gui/src/hooks/useDownloadInventorySync.ts) in App listens for `downloads:job` with `status === 'done'`, updates catalog cache via [`applyInventoryChange`](packages/gui/src/pages/library/romCache.ts), and [`useLibraryData`](packages/gui/src/pages/library/useLibraryData.ts) subscribes to `onInventoryChange` for live badges/detail.
+- [`StatusBar`](packages/gui/src/components/StatusBar.tsx) refreshes library stats immediately on download complete (5s poll remains as fallback).
 
-```mermaid
-flowchart LR
-  IPC["downloads:job done"]
-  Hook["useDownloadInventorySync in App"]
-  Cache["romCache mark downloaded"]
-  Lib["useLibraryData state"]
-  Bar["StatusBar stats refresh"]
-  IPC --> Hook
-  Hook --> Cache
-  Hook --> Lib
-  Hook --> Bar
-```
+**Acceptance:** Queue a download from Library → when the job completes, **Downloaded** badge, detail pane, and status bar counts update without reload.
 
-1. **App-level listener** — register `onDownloadJob` once in [`App.tsx`](packages/gui/src/App.tsx) (always mounted), not only while Library is visible. New hook: `packages/gui/src/hooks/useDownloadInventorySync.ts`.
-2. **On `status === 'done'`** — given `romId` + `rommSlug` from job:
-   - Extend [`markCatalogRomDownloaded`](packages/gui/src/pages/library/romCache.ts) → `markRomDownloadedInCatalog(romId, true)` that updates **all** catalog cache entries containing that `romId` (not scoped to one platform id)
-   - Add `romId` to `downloadedIdsBySlug` for `rommSlug`; invalidate `downloadedRomsBySlug` for that slug (or append if cached list loaded)
-   - Emit a lightweight callback/event so `useLibraryData` updates `roms`, `downloadedIds`, `detail`, and `downloadedRoms` React state when mounted
-3. **StatusBar** — on same event, call `getLibraryStats()` immediately (keep 5s poll as fallback)
-4. **Symmetric delete** — refactor delete path to use the same hook/event bus so cache + UI stay consistent
+### Later UI passes (not v1 downloads)
 
-**Acceptance:** Queue a download from Library → stay on Library or switch to Downloads → when job completes, **Downloaded** badge, detail pane, Downloaded filter, and status bar counts update without reload.
-
-### Later UI passes (not this one)
-
-Sync conflict UX polish — same shell + theme system.
+Save/state sync conflict UX — same shell + theme system; ship with save sync implementation.
 
 ## v1 non-goals
 

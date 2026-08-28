@@ -1,6 +1,7 @@
-import { Fragment, useEffect, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useState, type ReactNode } from "react";
 import { getApi } from "../api";
 import { formatBytes } from "../pages/library/format";
+import { onInventoryChange } from "../pages/library/romCache";
 import {
   IconCircleCheck,
   IconClock,
@@ -108,6 +109,14 @@ export function StatusBar() {
     storageBytes: 0,
   });
 
+  const refreshStats = useCallback(async () => {
+    try {
+      setStats(await getApi().getLibraryStats());
+    } catch {
+      /* ignore until index ready */
+    }
+  }, []);
+
   useEffect(() => {
     const refresh = async () => {
       try {
@@ -120,11 +129,7 @@ export function StatusBar() {
       } catch {
         /* ignore until API ready */
       }
-      try {
-        setStats(await getApi().getLibraryStats());
-      } catch {
-        /* ignore */
-      }
+      await refreshStats();
       try {
         setStatus((await getApi().daemonStatus()) as DaemonStatus);
       } catch {
@@ -133,8 +138,24 @@ export function StatusBar() {
     };
     void refresh();
     const t = setInterval(() => void refresh(), 5000);
-    return () => clearInterval(t);
-  }, []);
+
+    let offJob = () => {};
+    let offInventory = () => {};
+    try {
+      offJob = getApi().onDownloadJob((job) => {
+        if ((job as { status: string }).status === "done") void refreshStats();
+      });
+      offInventory = onInventoryChange(() => void refreshStats());
+    } catch {
+      /* browser / no bridge */
+    }
+
+    return () => {
+      clearInterval(t);
+      offJob();
+      offInventory();
+    };
+  }, [refreshStats]);
 
   const downloaded = stats.downloadedRoms;
   const missing = Math.max(0, totalRoms - downloaded);
