@@ -15,9 +15,11 @@ import {
 } from "./romCache";
 import type { Platform, RomItem, StatusFilter } from "./types";
 import { useActiveDownloads } from "../../hooks/useActiveDownloads";
+import { useConfirm } from "../../components/ConfirmProvider";
 
 export function useLibraryData() {
   const activeDownloads = useActiveDownloads();
+  const confirm = useConfirm();
   const [platforms, setPlatforms] = useState<Platform[]>([]);
   const [selected, setSelected] = useState<Platform | null>(null);
   const [roms, setRoms] = useState<RomItem[]>([]);
@@ -601,10 +603,15 @@ export function useLibraryData() {
 
   const deleteLocal = useCallback(
     async (rom: RomItem) => {
-      if (
-        !confirm(`Delete local files for "${rom.name}"? RomM is not touched.`)
-      )
-        return;
+      const ok = await confirm({
+        title: "Delete local files",
+        message: `Delete local files for "${rom.name}"?`,
+        hint: "RomM is not touched.",
+        confirmLabel: "Delete",
+        cancelLabel: "Cancel",
+        tone: "danger",
+      });
+      if (!ok) return;
       await getApi().deleteLocal(rom.id);
       const slug = rom.platform_slug ?? selected?.slug;
       if (slug) invalidateDownloaded(slug);
@@ -634,7 +641,7 @@ export function useLibraryData() {
       if (detail?.id === rom.id) setDetail({ ...rom, downloaded: false });
       setMessage(`Removed local copy of ${rom.name}`);
     },
-    [detail?.id, selected, search],
+    [detail?.id, selected, search, confirm],
   );
 
   const applyDeletedIds = useCallback(
@@ -712,13 +719,15 @@ export function useLibraryData() {
       return;
     }
 
-    if (
-      !confirm(
-        `Delete local files for ${ids.length} ROM${ids.length === 1 ? "" : "s"}? RomM is not touched.`,
-      )
-    ) {
-      return;
-    }
+    const ok = await confirm({
+      title: "Delete local files",
+      message: `Delete local files for ${ids.length} ROM${ids.length === 1 ? "" : "s"}?`,
+      hint: "RomM is not touched.",
+      confirmLabel: "Delete",
+      cancelLabel: "Cancel",
+      tone: "danger",
+    });
+    if (!ok) return;
 
     setBusyKind("delete");
     setError(null);
@@ -746,6 +755,7 @@ export function useLibraryData() {
     selectedIds,
     applyDeletedIds,
     exitSelectMode,
+    confirm,
   ]);
 
   const downloadSelected = useCallback(async () => {

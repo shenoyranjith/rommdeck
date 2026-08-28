@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, session, dialog } from "electron";
+import { app, BrowserWindow, ipcMain, shell, session } from "electron";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -36,6 +36,7 @@ let downloadManager: DownloadManager | null = null;
 let libraryIndex: LibraryIndex | null = null;
 let quitting = false;
 let queueRestoreScheduled = false;
+let quitConfirmResolve: ((confirmed: boolean) => void) | null = null;
 
 /** Defer queue restore until after the library can load platforms (or a short fallback). */
 function scheduleQueueRestore(): void {
@@ -55,19 +56,19 @@ function hasActiveTransfers(): boolean {
   return isGamelistWriteActive();
 }
 
-function formatTransferDetail(b: {
+function askRendererToConfirmQuit(breakdown: {
   downloading: number;
   queued: number;
   metadata: number;
   gamelistWriteActive: boolean;
-}): string {
-  const lines: string[] = [];
-  if (b.downloading > 0) lines.push(`${b.downloading} downloading`);
-  if (b.queued > 0) lines.push(`${b.queued} queued`);
-  if (b.metadata > 0) lines.push(`${b.metadata} writing metadata`);
-  if (b.gamelistWriteActive) lines.push("gamelist.xml write in progress");
-  const summary = lines.length > 0 ? lines.join(" · ") : "transfers in progress";
-  return `${summary}\n\nQuit anyway? ROM files already on disk are kept. Incomplete downloads and metadata may need to be retried.`;
+}): Promise<boolean> {
+  const win = mainWindow;
+  if (!win || win.isDestroyed()) return Promise.resolve(false);
+
+  return new Promise((resolve) => {
+    quitConfirmResolve = resolve;
+    win.webContents.send("app:quitConfirm", breakdown);
+  });
 }
 
 async function performQuit(win: BrowserWindow | null): Promise<void> {
@@ -93,21 +94,8 @@ async function requestAppQuit(win: BrowserWindow | null): Promise<void> {
       gamelistWriteActive: isGamelistWriteActive(),
       total: 0,
     };
-    const target = win && !win.isDestroyed() ? win : BrowserWindow.getFocusedWindow();
-    const opts = {
-      type: "warning" as const,
-      title: "Active transfers",
-      message: "RommDeck still has work in progress.",
-      detail: formatTransferDetail(breakdown),
-      buttons: ["Stay", "Quit anyway"],
-      defaultId: 0,
-      cancelId: 0,
-    };
-    const { response } =
-      target && !target.isDestroyed()
-        ? await dialog.showMessageBox(target, opts)
-        : await dialog.showMessageBox(opts);
-    if (response !== 1) return;
+    const confirmed = await askRendererToConfirmQuit(breakdown);
+    if (!confirmed) return;
   }
 
   await performQuit(win);
@@ -338,6 +326,7 @@ function registerIpc(): void {
   ipcMain.removeHandler("window:isMaximized");
   ipcMain.removeHandler("window:setBackground");
   ipcMain.removeHandler("app:getVersion");
+  ipcMain.removeHandler("app:quitConfirmResponse");
 
   ipcMain.handle("config:get", () => loadConfig());
 
@@ -345,6 +334,11 @@ function registerIpc(): void {
     BrowserWindow.fromWebContents(e.sender);
 
   ipcMain.handle("app:getVersion", () => app.getVersion());
+
+  ipcMain.handle("app:quitConfirmResponse", (_e, confirmed: unknown) => {
+    quitConfirmResolve?.(confirmed === true);
+    quitConfirmResolve = null;
+  });
 
   ipcMain.handle("window:minimize", (e) => {
     windowFrom(e)?.minimize();

@@ -48,6 +48,15 @@ export interface RommDeckApi {
   windowClose: () => Promise<void>;
   windowIsMaximized: () => Promise<boolean>;
   onWindowMaximized: (cb: (maximized: boolean) => void) => () => void;
+  onQuitConfirm: (
+    cb: (payload: {
+      downloading: number;
+      queued: number;
+      metadata: number;
+      gamelistWriteActive: boolean;
+    }) => void,
+  ) => () => void;
+  respondQuitConfirm: (confirmed: boolean) => Promise<void>;
 }
 
 const api: RommDeckApi = {
@@ -106,6 +115,20 @@ const api: RommDeckApi = {
     ipcRenderer.on("window:maximized", handler);
     return () => ipcRenderer.removeListener("window:maximized", handler);
   },
+  onQuitConfirm: (cb) => {
+    const handler = (
+      _: unknown,
+      payload: {
+        downloading: number;
+        queued: number;
+        metadata: number;
+        gamelistWriteActive: boolean;
+      },
+    ) => cb(payload);
+    ipcRenderer.on("app:quitConfirm", handler);
+    return () => ipcRenderer.removeListener("app:quitConfirm", handler);
+  },
+  respondQuitConfirm: (confirmed) => ipcRenderer.invoke("app:quitConfirmResponse", confirmed),
 };
 
 contextBridge.exposeInMainWorld("rommdeck", api);

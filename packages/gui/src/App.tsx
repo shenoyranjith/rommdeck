@@ -17,6 +17,7 @@ import { cn } from "./lib/cn";
 import { getApi } from "./api";
 import { applyUiTheme, isUiTheme, DEFAULT_UI_THEME } from "./theme";
 import { useDownloadInventorySync } from "./hooks/useDownloadInventorySync";
+import { ConfirmProvider } from "./components/ConfirmProvider";
 
 const NAV = [
   { to: "/", end: true, label: "Library", Icon: IconLibrary },
@@ -48,7 +49,8 @@ export function App() {
   }, []);
 
   return (
-    <div className="relative h-full w-full min-h-0 min-w-0 overflow-hidden bg-bg0 text-text">
+    <ConfirmProvider>
+      <div className="relative h-full w-full min-h-0 min-w-0 overflow-hidden bg-bg0 text-text">
       {/* CRT scanlines */}
       <div
         aria-hidden
@@ -121,6 +123,7 @@ export function App() {
           </div>
         </div>
       </div>
-    </div>
+      </div>
+    </ConfirmProvider>
   );
 }
