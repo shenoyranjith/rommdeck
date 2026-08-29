@@ -81,6 +81,46 @@ export function AutoSyncSection({
               <option value="device_wins">device_wins</option>
             </select>
           </Field>
+          <label className="mb-3 flex cursor-pointer items-start gap-2 text-sm last:mb-0">
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={cfg.sync.registerNewDevice ?? false}
+              onChange={(e) =>
+                onChange({
+                  ...cfg.sync,
+                  registerNewDevice: e.target.checked,
+                })
+              }
+            />
+            <span>
+              <span className="text-text">Register as new device on next sync</span>
+              <span className="mt-0.5 block text-xs text-muted">
+                RomM matches devices by hostname. Clearing device ID alone reuses the
+                same device. Enable this once to simulate a second machine (one-shot).
+              </span>
+            </span>
+          </label>
+          <label className="mb-3 flex cursor-pointer items-start gap-2 text-sm last:mb-0">
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={cfg.sync.resetSyncHistory ?? false}
+              onChange={(e) =>
+                onChange({
+                  ...cfg.sync,
+                  resetSyncHistory: e.target.checked,
+                })
+              }
+            />
+            <span>
+              <span className="text-text">Reset sync history on next registration</span>
+              <span className="mt-0.5 block text-xs text-muted">
+                Re-download server saves on the same device after you deleted local
+                files (RomM otherwise treats that as intentional). One-shot.
+              </span>
+            </span>
+          </label>
           <p className="text-sm text-muted">
             Device ID:{" "}
             <span className="font-mono text-accent">

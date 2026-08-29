@@ -39,7 +39,22 @@ todos:
     content: 'README with setup, token scopes, systemd install, Linux/RetroDECK workflow'
     status: completed
   - id: save-sync-ux
-    content: 'Save/state sync rollout: interactive conflict resolution when implementing full save sync'
+    content: 'Save/state sync v1 rollout — see Save sync section (deterministic discovery, UX, daemon polish, conflict UI)'
+    status: pending
+  - id: save-discovery
+    content: 'Deterministic RetroArch discovery — battery saves + save states, platform-emulator-map.json, content_hash MD5'
+    status: completed
+  - id: manual-sync-ux
+    content: 'Manual Sync Now UX — results, skipped platforms, pending conflicts on Sync page'
+    status: completed
+  - id: settings-sync-ux
+    content: 'Slim Sync page + Auto-sync Settings labels, conflict policy help text'
+    status: pending
+  - id: auto-sync-daemon
+    content: 'Honor sync.enabled, systemd toggle, daemon restart on config change, watch saves_path + states_path'
+    status: pending
+  - id: conflict-ui
+    content: 'Interactive per-conflict resolution on Sync page (manual sync)'
     status: pending
 isProject: false
 ---
@@ -195,7 +210,7 @@ Target against RomM **5.x** OpenAPI (`/openapi.json`).
 2. **Library** — **done** — left: platforms; main: ROM grid/list with cover + **Downloaded / Missing** badge; search; multi-select; bulk download/delete; status bar stats.
 3. **Downloads** — **done** — Active / Failed sections; per-row progress, cancel, retry, dismiss; toolbar **Cancel all**, **Retry all**, **Clear failed**; persist queue to `download-queue.json`; in-app exit confirm when active jobs remain; write ROMs + ES-DE metadata on success.
 4. **Local management** — **done** — filter to downloaded; **Delete from device** removes local file(s) + ES-DE gamelist/media (never deletes on RomM); in-app confirm dialog; detail-pane badges (Downloaded / Unverified / Missing metadata).
-5. **Sync** — **done (basic)** — device pair status; **Sync Now**; daemon status; conflict list when policy leaves items pending. Interactive conflict resolution ships with full save sync work.
+5. **Sync** — device pair status; **Sync Now**; daemon status; conflict list when policy leaves items pending. **In progress:** deterministic save discovery + conflict UX polish (see [Save sync](#save--state-sync)).
 
 Visual direction: utility app — clear hierarchy, platform-first navigation, restrained color system (avoid purple-gradient / cream-serif AI clichés), subtle motion on queue progress and status transitions.
 
@@ -206,11 +221,80 @@ Visual direction: utility app — clear hierarchy, platform-first navigation, re
 - On library load: join RomM list with index; also rescan `{roms_path}/{esde}/*` to catch files added outside the app (match by filename).
 - Multi-file ROMs: store all files under the same `rom_id`; “downloaded” = all required files present.
 
-## Save / state sync logic (shared)
+## Save / state sync
+
+Reference: [romm-tender save-file-sync-architecture](https://raw.githubusercontent.com/danielcopper/romm-tender/refs/heads/main/docs/architecture/save-file-sync-architecture.md).
+
+**Status:** Protocol + daemon scaffold **done**. **v1 rollout in progress:** replace fuzzy basename discovery with deterministic RetroArch paths, RomM 4.9+ `content_hash` (MD5), Sync/Settings UX polish, interactive manual conflict resolution.
+
+### What syncs (v1)
+
+| In scope | Out of scope (later) |
+| --- | --- |
+| RetroArch **battery saves** under `{saves_path}/{esde_folder}/` | Standalone emulators (Dolphin, PCSX2, PPSSPP, …) |
+| RetroArch **save states** under `{states_path}/{esde_folder}/` (`.state`, `.state0`–`.state9`) | ES-DE launcher overrides (`alternativeEmulator`) — future release |
+| Indexed ROMs only (`library.db` — need `rom_id` + `esde_folder`) | Multi-save / `.m3u` directories, zip-aware `content_hash` |
+| **Platform map overrides** in Settings (RomM slug ↔ ES-DE folder) | RetroArch **core** picker in RommDeck (RetroDECK handles cores) |
+| Manual **Sync Now** + **auto-sync** daemon (same `@rommdeck/core` engine) | Custom RetroArch save layouts (see below) |
+
+RommDeck assumes **RetroDECK factory RetroArch defaults**: sort saves by content directory **on**, saves in `saves_path` / states in `states_path`, `savefiles_in_content_dir` **off**. Custom save-path settings, sort-by-core layout, flat saves, and folder aliases are **not supported**.
+
+v1 uses bundled [`data/platform-emulator-map.json`](data/platform-emulator-map.json) (`esde_folder → emulator family`, e.g. `retroarch` | `standalone`) to skip standalone-default platforms. Negotiate always uses `emulator: "retroarch"` for synced entries. Future releases extend the same file with standalone families (`dolphin`, `pcsx2`, …) — not a separate RetroArch-only map.
+
+### Discovery (v1 — replacing current heuristic)
+
+**Today:** [`buildNegotiatePayload`](packages/core/src/sync/protocol.ts) walks save trees and fuzzy-matches basenames — wrong for same-title cross-platform games.
+
+**v1 target:** for each indexed ROM on a RetroArch-default platform, construct expected paths and probe disk:
+
+```text
+{saves_path}/{esde_folder}/{rom_basename}.{battery_ext}
+{states_path}/{esde_folder}/{rom_basename}.state[0-9]
+```
+
+- `{esde_folder}` from index (same folder as ROMs)
+- `{rom_basename}` = ROM filename without extension, **preserving `(USA)` tags**
+- Cross-platform same-name games disambiguated by `{esde_folder}` — no fuzzy matching
+
+New module: [`packages/core/src/sync/save-paths.ts`](packages/core/src/sync/save-paths.ts). Negotiate payload: RomM 4.9+ `ClientSaveState` with `content_hash` (MD5), `slot: "default"`, `updated_at`. Downloads write to canonical local paths (ROM basename + server extension), not server timestamp filenames.
+
+### Manual vs auto-sync
+
+| | **Sync Now** (GUI) | **Auto-sync** (`rommdeck-syncd`) |
+| --- | --- | --- |
+| Trigger | User button | systemd at login + interval + fs watch (debounced) |
+| Process | Electron `sync:now` IPC | Standalone Node CLI — runs when GUI is closed |
+| Conflicts | `unattended: false` — pending in UI | `unattended: true` — applies `sync.conflictPolicy` |
+| Status | Sync page (daemon status read from file) | Writes `daemon-status.json` |
+
+Settings **Enable auto-sync** → `systemctl --user enable/disable --now rommdeck-syncd.service`. Both paths share `~/.config/rommdeck/config.json` and `library.db`.
+
+### Conflict policy
+
+Default: **`keep_both`** — RomM keeps the server copy and uploads yours as an additional save; local file unchanged. Also supported: `server_wins`, `device_wins`. No `newest_wins` (unreliable timestamps).
+
+### v1 implementation todos
+
+1. **save-discovery** — `save-paths.ts`, refactor `buildNegotiatePayload`, MD5 `content_hash`, `data/platform-emulator-map.json`
+2. **manual-sync-ux** — Sync page results, skipped platforms, pending conflicts
+3. **settings-sync-ux** — slim Sync page, Auto-sync labels + conflict help text
+4. **auto-sync-daemon** — honor `sync.enabled`, restart on config change, watch both roots
+5. **conflict-ui** — interactive resolution on manual Sync Now
+
+### Future releases
+
+| Release | Focus |
+| --- | --- |
+| **2** | Standalone emulator save paths |
+| **2** | ES-DE launcher overrides (`alternativeEmulator`) |
+| **2+** | Multi-save / `.m3u` directories, zip-container `content_hash` |
+| **3+** | Client-side sync kernel, baseline state DB, play-session ingest |
+
+## Save / state sync logic (shared — protocol)
 
 1. Register device with paths pointing at RetroDECK `saves_path` / `states_path`.
-2. Build negotiate payload from **indexed downloaded ROMs** only: scan save/state files tied by content basename / common emulator layouts; compute mtime + SHA1.
-3. Execute returned ops (upload multipart, download to `dest_path`, apply conflict choice/policy).
+2. Build negotiate payload from **indexed downloaded ROMs** on RetroArch-default platforms: deterministic paths per ROM (see above); compute `content_hash` (MD5) + mtime.
+3. Execute returned ops (upload multipart, download to canonical `dest_path`, apply conflict choice/policy).
 4. Complete session; update status for GUI + journal.
 
 Play-session ingest is out of scope for v1 (empty `play_sessions` on complete).
@@ -226,7 +310,8 @@ rommdeck/
   fixtures/retrodeck.json  # Optional sample paths (non-RetroDECK fallback)
   scripts/seed-dev-tree.sh
   scripts/deploy-syncd.sh  # optional rsync install of daemon
-  data/platform-map.json
+  data/platform-map.json          # RomM slug → ES-DE folder (downloads)
+  data/platform-emulator-map.json # ES-DE folder → emulator family (sync scope)
   docs/mockups/          # UI direction mockups (Arcade/CRT)
   README.md
 ```
@@ -242,6 +327,7 @@ rommdeck/
 7. README (Linux/RetroDECK workflow, token scopes, systemd)
 8. ~~**UI shell + themes**~~ **done** — Vector shell implemented (sidebar, accent frame, status bar, theme picker)
 9. ~~**Downloads UI + queue**~~ **done** — see section below
+10. **Save sync v1** — deterministic RetroArch discovery, MD5 `content_hash`, Sync/Settings UX, conflict UI (see [Save sync](#save--state-sync))
 
 ## UI: Arcade / CRT shell + themes
 
@@ -280,13 +366,11 @@ rommdeck/
 | Settings — Retrodeck + Auto-sync | `docs/mockups/settings-vector-candy-sync.png` |
 | Sync — actions + status only | `docs/mockups/sync-vector-slim.png` |
 
-## Settings UI (planned)
+## Settings UI
 
-**Status:** Phase 1 approved — build Settings shell + Appearance ([`settings-vector-candy.png`](docs/mockups/settings-vector-candy.png)). RomM, Retrodeck, Auto-sync deferred.
+**Status:** Shell + Appearance, RomM, Retrodeck, Auto-sync **done** (see mockups). Save-sync UX polish (conflict help text, slim Sync page) ships with [Save sync](#save--state-sync) todos.
 
-**Phase 1:** New shell + refined Appearance. Existing RomM / Retrodeck / Auto-sync content **moved** into correct section panels (unrefined); refine one section per later phase.
-
-Full four-section spec unchanged — see plan file. Mockups: `docs/mockups/settings-vector-*.png`, `docs/mockups/sync-vector-slim.png`.
+Mockups: `docs/mockups/settings-vector-*.png`, `docs/mockups/sync-vector-slim.png`.
 
 ## Downloads UI + queue
 
@@ -329,7 +413,7 @@ packages/gui/src/pages/downloads/useDownloadQueue.ts
 
 ### Implementation todos (Downloads)
 
-All v1 items **done**. Next major work: full save/state sync UX (including conflict resolution).
+All v1 items **done**. Next major work: [Save sync v1](#save--state-sync) (deterministic discovery + UX).
 
 ### Library live sync on download
 
@@ -342,7 +426,7 @@ All v1 items **done**. Next major work: full save/state sync UX (including confl
 
 ### Later UI passes (not v1 downloads)
 
-Save/state sync conflict UX — same shell + theme system; ship with save sync implementation.
+Save/state sync conflict UX — same shell + theme system; ships with [Save sync](#save--state-sync) todos.
 
 ## v1 non-goals
 
@@ -350,6 +434,9 @@ Save/state sync conflict UX — same shell + theme system; ship with save sync i
 - Deleting ROMs on the RomM server
 - Unattended bulk ROM downloading (downloads stay GUI-driven)
 - Launching games / controlling RetroDECK/ES-DE
+- RetroArch **core** selection in RommDeck (RetroDECK/ES-DE handles this)
+- Custom RetroArch save-path layouts (non-RetroDECK defaults)
+- Standalone emulator saves (Dolphin, PCSX2, …) — future release
 - BIOS/firmware management
 - Flatpak packaging (document manual build; packaging can follow)
 - Playtime reporting
@@ -357,8 +444,8 @@ Save/state sync conflict UX — same shell + theme system; ship with save sync i
 
 ## Risk notes
 
-- **Slug mismatches**: custom RomM folder maps need Settings overrides.
-- **Save path layouts**: RetroArch vs standalone emulators differ under `saves/`/`states/`; v1 matches via indexed ROM basenames and common subfolder patterns, with sync limited to ROMs known to the local index.
+- **Slug mismatches**: custom RomM folder maps need Settings platform-map overrides (supported).
+- **Save path layouts**: v1 syncs RetroArch battery saves + save states on RetroDECK-default platforms only, via deterministic paths from indexed ROMs (`{esde_folder}/{rom_basename}`). Standalone-default platforms skipped until Release 2. Custom RetroArch save settings unsupported.
 - **Large multi-disc / folder ROMs**: use RomM file list endpoints and download all parts.
 - **Unattended conflicts**: daemon cannot pop UI mid-game; require an explicit default conflict policy in config.
 - **Steam Deck Gaming Mode**: user systemd services generally run when the user session is active; document that sync runs in Desktop Mode and while logged in (same as other `--user` services).

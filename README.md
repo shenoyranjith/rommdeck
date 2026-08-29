@@ -22,7 +22,8 @@ packages/gui/       Electron + React UI
 packages/syncd/     Background sync daemon CLI
 packaging/systemd/  rommdeck-syncd.service
 fixtures/           Optional sample retrodeck.json (non-RetroDECK fallback)
-data/platform-map.json
+data/platform-map.json           # RomM slug → ES-DE folder
+data/platform-emulator-map.json  # ES-DE folder → emulator family (sync)
 docs/mockups/       UI mockups (themes, Downloads, Settings, Sync)
 scripts/seed-dev-tree.sh
 scripts/deploy-syncd.sh
@@ -96,11 +97,54 @@ Logs: `journalctl --user -u rommdeck-syncd.service -f`
 Status file: `~/.local/share/rommdeck/daemon-status.json`  
 Config (shared with GUI): `~/.config/rommdeck/config.json`
 
-The GUI Sync page can toggle `systemctl --user enable/disable --now`.
+The GUI Sync page can toggle `systemctl --user enable/disable --now`. Settings → Auto-sync controls interval, debounce, sync direction, and conflict policy.
+
+**Triggers:** startup sync (~2s after launch), background interval (default 5 min), and filesystem watch on `saves_path` + `states_path` (debounced, e.g. 45s after last write).
 
 ### Gaming Mode note
 
 `systemd --user` services run while your user session is active. Sync is reliable in Desktop Mode and while logged in (same as other user services).
+
+## Save & state sync
+
+RommDeck syncs **RetroArch battery saves** and **save states** with RomM via the [Device Sync Protocol](https://docs.romm.app/5.1.0/developers/device-sync-protocol/). RomM decides upload/download/conflict; RommDeck scans local files and executes the plan.
+
+**Two entry points, one engine** (`@rommdeck/core`):
+
+| | Sync Now (GUI) | Auto-sync (`rommdeck-syncd`) |
+| --- | --- | --- |
+| When | On demand | At login, on interval, after save writes |
+| Conflicts | Shown in UI (`unattended: false`) | Auto-resolved via config (`unattended: true`) |
+
+### What syncs (v1)
+
+- **Battery saves** — `.srm`, `.sav`, `.rtc`, etc. under `{saves_path}/{esde_folder}/`
+- **Save states** — `.state`, `.state0`–`.state9` under `{states_path}/{esde_folder}/`
+- **Indexed ROMs only** — games in `library.db` (downloaded or rescanned from disk)
+- **RetroArch-default platforms** — factory RetroDECK mapping; standalone emulators (GameCube, PS2, …) skipped until a future release
+
+**Platform map overrides** in Settings (RomM slug ↔ ES-DE folder) are supported. **RetroArch core** choice stays in RetroDECK — RommDeck does not offer a core picker.
+
+### Paths (RetroDECK defaults)
+
+RommDeck assumes stock RetroDECK RetroArch layout:
+
+```text
+{saves_path}/{esde_folder}/{rom_basename}.{ext}
+{states_path}/{esde_folder}/{rom_basename}.state[0-9]
+```
+
+Sort saves by content directory **on**; `savefiles_in_content_dir` **off**. Custom RetroArch save-path settings are not supported.
+
+### Conflict policy
+
+Default **`keep_both`**: if both copies changed before syncing, RomM keeps the server version and uploads yours as an additional save — nothing overwritten locally. Alternatives: `server_wins`, `device_wins`.
+
+Configure in Settings → Auto-sync. Manual **Sync Now** leaves conflicts pending for review (interactive resolution ships with the current save-sync rollout).
+
+### Not in v1
+
+Standalone emulator saves, multi-disc `.m3u` save folders, zip-aware save hashing, ES-DE launcher overrides (`alternativeEmulator`). See [`RommDeck-plan.md`](RommDeck-plan.md) for full scope.
 
 ## Config
 
@@ -110,9 +154,18 @@ Optional path overrides: `ROMMDECK_CONFIG_DIR`, `ROMMDECK_DATA_DIR`.
 
 ## Platform mapping
 
+Two bundled maps in `data/` (Settings overrides apply to the first only):
+
+| File | Purpose | v1 values |
+| --- | --- | --- |
+| `platform-map.json` | RomM slug → ES-DE folder (download targets) | e.g. `ngc` → `gc`, `genesis` → `megadrive` |
+| `platform-emulator-map.json` | ES-DE folder → default emulator **family** (sync scope) | `retroarch` \| `standalone`; future: `dolphin`, `pcsx2`, … |
+
 Downloads land in `{roms_path}/{esde_folder}/{filename}`.
 
-Bundled map (`data/platform-map.json`) inverts RomM’s [ES-DE example](https://github.com/rommapp/romm/blob/master/examples/config.es-de.example.yml) (RomM slug → ES-DE folder), e.g. `ngc` → `gc`, `genesis` → `megadrive`. Override per slug in Settings.
+`platform-map.json` inverts RomM’s [ES-DE example](https://github.com/rommapp/romm/blob/master/examples/config.es-de.example.yml). Override per slug in Settings → RomM.
+
+Save sync (v1) only probes RetroArch paths for platforms mapped to `retroarch` in `platform-emulator-map.json`.
 
 ## ES-DE metadata
 
@@ -143,12 +196,17 @@ UI mockups: `docs/mockups/downloads-vector-*.png`, `docs/mockups/settings-vector
 | `npm run deploy:syncd` | Build core/syncd, rsync to `REMOTE`, restart user unit |
 | `npm run build` | Build core, syncd, and GUI |
 | `npm run typecheck` | Typecheck all packages |
+| `npm run test:core` | Run core unit tests (rebuilds better-sqlite3 for Node, then restores Electron ABI) |
+| `npm run rebuild:electron` | Fix GUI after running core tests directly — rebuilds better-sqlite3 for Electron |
 
 ## v1 non-goals
 
 - Uploading or deleting ROMs on RomM
 - Unattended bulk ROM downloading
 - Launching games / controlling RetroDECK
+- RetroArch core selection in RommDeck (use RetroDECK/ES-DE)
+- Custom RetroArch save-path layouts
+- Standalone emulator saves (Dolphin, PCSX2, …) — future release
 - BIOS management, Flatpak packaging, playtime reporting
 - System-wide (root) systemd unit
 

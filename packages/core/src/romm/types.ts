@@ -79,40 +79,69 @@ export interface RommPaginated<T> {
 }
 
 export interface RommDevice {
-  id: number;
+  id: string | number;
   name: string;
   platform?: string;
   hostname?: string;
   sync_mode?: string;
+  sync_config?: { paths?: Record<string, string> } | null;
   paths?: Record<string, string>;
 }
 
+export interface ClientSaveState {
+  rom_id: number;
+  file_name: string;
+  slot: string;
+  emulator: string;
+  content_hash: string;
+  updated_at: string;
+  file_size_bytes: number;
+}
+
+/** @deprecated Legacy nested negotiate shape — prefer flat `ClientSaveState[]`. */
 export interface SyncLocalSave {
   file: string;
   mtime: string;
   sha1: string;
 }
 
+/** @deprecated Legacy nested negotiate shape — prefer flat `ClientSaveState[]`. */
 export interface SyncLocalRom {
   rom_id: number;
   saves: SyncLocalSave[];
 }
 
-export type SyncOpType = "upload" | "download" | "conflict" | "noop";
+export type SyncOpAction = "upload" | "download" | "conflict" | "no_op";
 
 export interface SyncOperation {
-  type: SyncOpType;
+  /** Normalized action (`no_op` from RomM API). */
+  type: SyncOpAction;
   rom_id: number;
+  /** Basename used for local lookup and UI (`file_name` from API). */
   file: string;
+  file_name?: string;
+  save_id?: number | null;
+  slot?: string | null;
+  emulator?: string | null;
+  reason?: string;
+  /** Legacy upload target (older RomM negotiate responses). */
   destination?: string;
+  /** Legacy download URL (older RomM negotiate responses). */
   source?: string;
+  /** Server-suggested path (older RomM) or ignored when using canonical paths. */
   dest_path?: string;
   resolution?: "keep_both" | "server_wins" | "device_wins";
+  server_updated_at?: string;
+  server_content_hash?: string | null;
 }
 
 export interface NegotiateResponse {
-  session_id: string;
+  session_id: string | number;
   operations: SyncOperation[];
+  total_upload?: number;
+  total_download?: number;
+  total_conflict?: number;
+  total_no_op?: number;
 }
 
 export interface CompleteSessionBody {

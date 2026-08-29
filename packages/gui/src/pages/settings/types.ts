@@ -15,8 +15,10 @@ export interface SettingsConfig {
     intervalSeconds: number;
     debounceSeconds: number;
     conflictPolicy: "keep_both" | "server_wins" | "device_wins";
-    deviceId: number | null;
+    deviceId: string | null;
     deviceName: string;
+    registerNewDevice?: boolean;
+    resetSyncHistory?: boolean;
   };
   ui: { theme: UiTheme; scanlines: boolean; scanlineStrength: number };
   platformMapOverrides: Record<string, string>;

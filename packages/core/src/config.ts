@@ -29,8 +29,12 @@ export interface SyncConfig {
   intervalSeconds: number;
   debounceSeconds: number;
   conflictPolicy: ConflictPolicy;
-  deviceId: number | null;
+  deviceId: string | null;
   deviceName: string;
+  /** Next sync: register a new RomM device (RomM dedupes by hostname otherwise). One-shot. */
+  registerNewDevice?: boolean;
+  /** Next sync: clear this device's save sync history on re-registration. One-shot. */
+  resetSyncHistory?: boolean;
 }
 
 export interface UiConfig {
@@ -143,6 +147,14 @@ export function loadConfig(): RommDeckConfig {
         syncMetadataOnDownload: DEFAULT_CONFIG.retrodeck.syncMetadataOnDownload,
       },
     };
+  }
+  if (cfg.sync?.deviceId != null && cfg.sync.deviceId !== "") {
+    cfg = {
+      ...cfg,
+      sync: { ...cfg.sync, deviceId: String(cfg.sync.deviceId) },
+    };
+  } else if (cfg.sync?.deviceId === "") {
+    cfg = { ...cfg, sync: { ...cfg.sync, deviceId: null } };
   }
 
   return cfg;

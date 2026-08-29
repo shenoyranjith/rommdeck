@@ -18,6 +18,7 @@
     "deploy:syncd": "bash scripts/deploy-syncd.sh",
     "rebuild:electron": "electron-rebuild -f -w better-sqlite3",
     "rebuild:node": "npm rebuild better-sqlite3",
+    "test:core": "npm run rebuild:node && npm run test -w @rommdeck/core; npm run rebuild:electron",
     "postinstall": "electron-rebuild -f -w better-sqlite3 || true"
   },
   "engines": {

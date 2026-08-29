@@ -52,29 +52,35 @@ async function syncOnce(reason: string): Promise<void> {
   const client = createRommClient(cfg.romm.baseUrl, cfg.romm.apiToken);
   const index = new LibraryIndex();
   try {
-    const deviceId = await ensureDevice(client, {
+    const syncPaths = {
+      romsPath: paths.romsPath,
+      savesPath: paths.savesPath,
+      statesPath: paths.statesPath,
+    };
+    const device = await ensureDevice(client, {
       deviceId: cfg.sync.deviceId,
       deviceName: cfg.sync.deviceName,
       syncMode: cfg.sync.mode,
-      paths: {
-        romsPath: paths.romsPath,
-        savesPath: paths.savesPath,
-        statesPath: paths.statesPath,
-      },
+      paths: syncPaths,
+      registerNew: cfg.sync.registerNewDevice,
+      resetSyncHistory: cfg.sync.resetSyncHistory,
     });
-    if (cfg.sync.deviceId !== deviceId) {
-      cfg.sync.deviceId = deviceId;
-      saveConfig(cfg);
+    let configDirty = false;
+    if (cfg.sync.deviceId !== device.deviceId) {
+      cfg.sync.deviceId = device.deviceId;
+      configDirty = true;
     }
+    if (cfg.sync.registerNewDevice || cfg.sync.resetSyncHistory) {
+      cfg.sync.registerNewDevice = false;
+      cfg.sync.resetSyncHistory = false;
+      configDirty = true;
+    }
+    if (configDirty) saveConfig(cfg);
 
-    log(`sync start (${reason}) device=${deviceId}`);
+    log(`sync start (${reason}) device=${device.deviceId}`);
     const result = await runSyncSession(client, index, {
-      deviceId,
-      paths: {
-        romsPath: paths.romsPath,
-        savesPath: paths.savesPath,
-        statesPath: paths.statesPath,
-      },
+      deviceId: device.deviceId,
+      paths: syncPaths,
       conflictPolicy: cfg.sync.conflictPolicy,
       unattended: true,
     });

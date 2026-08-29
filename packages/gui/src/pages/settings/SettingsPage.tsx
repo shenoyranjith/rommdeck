@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { getApi } from "../../api";
 import { useNotification } from "../../components/NotificationProvider";
 import { useRommConnection } from "../../components/RommConnectionProvider";
@@ -42,8 +43,21 @@ export function SettingsPage() {
   const { notifyOk, notifyError, clearNotification } = useNotification();
   const { status: connectionStatus, checkConnection } = useRommConnection();
   const [testing, setTesting] = useState(false);
+  const [searchParams] = useSearchParams();
   const [activeSection, setActiveSection] =
     useState<SettingsSectionId>("appearance");
+
+  useEffect(() => {
+    const section = searchParams.get("section");
+    if (
+      section === "appearance" ||
+      section === "romm" ||
+      section === "retrodeck" ||
+      section === "auto-sync"
+    ) {
+      setActiveSection(section);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     void (async () => {

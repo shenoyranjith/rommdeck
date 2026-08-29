@@ -18,6 +18,7 @@ rsync -az "$REPO_ROOT/packages/core/package.json" "$REMOTE:~/$REMOTE_APP/package
 rsync -az --delete "$REPO_ROOT/packages/syncd/dist/" "$REMOTE:~/$REMOTE_APP/packages/syncd/dist/"
 rsync -az "$REPO_ROOT/packages/syncd/package.json" "$REMOTE:~/$REMOTE_APP/packages/syncd/package.json"
 rsync -az "$REPO_ROOT/data/platform-map.json" "$REMOTE:~/$REMOTE_APP/data/platform-map.json"
+rsync -az "$REPO_ROOT/data/platform-emulator-map.json" "$REMOTE:~/$REMOTE_APP/data/platform-emulator-map.json"
 rsync -az "$REPO_ROOT/packaging/systemd/rommdeck-syncd.service" "$REMOTE:~/$REMOTE_APP/packaging/systemd/rommdeck-syncd.service"
 rsync -az "$REPO_ROOT/package.json" "$REMOTE:~/$REMOTE_APP/package.json"
 

@@ -26,8 +26,10 @@ import {
   getRomLocalStatus,
   isRomDownloaded,
   readDaemonStatus,
+  writeDaemonStatus,
   ensureDevice,
   runSyncSession,
+  toSyncResultReport,
   rommSlugToEsdeFolder,
   loadBundledPlatformMap,
   romHasEsdeMetadata,
@@ -770,29 +772,58 @@ function registerIpc(): void {
     const paths = resolveRetroDeckPaths(cfg.retrodeck);
     const client = createRommClient(cfg.romm.baseUrl, cfg.romm.apiToken);
     const index = getIndex();
-    const deviceId = await ensureDevice(client, {
+    const syncPaths = {
+      romsPath: paths.romsPath,
+      savesPath: paths.savesPath,
+      statesPath: paths.statesPath,
+    };
+    const device = await ensureDevice(client, {
       deviceId: cfg.sync.deviceId,
       deviceName: cfg.sync.deviceName,
       syncMode: cfg.sync.mode,
-      paths: {
-        romsPath: paths.romsPath,
-        savesPath: paths.savesPath,
-        statesPath: paths.statesPath,
-      },
+      paths: syncPaths,
+      registerNew: cfg.sync.registerNewDevice,
+      resetSyncHistory: cfg.sync.resetSyncHistory,
     });
-    if (cfg.sync.deviceId !== deviceId) {
-      cfg.sync.deviceId = deviceId;
-      saveConfig(cfg);
+    let configDirty = false;
+    if (cfg.sync.deviceId !== device.deviceId) {
+      cfg.sync.deviceId = device.deviceId;
+      configDirty = true;
     }
-    return runSyncSession(client, index, {
-      deviceId,
-      paths: {
-        romsPath: paths.romsPath,
-        savesPath: paths.savesPath,
-        statesPath: paths.statesPath,
-      },
+    if (cfg.sync.registerNewDevice || cfg.sync.resetSyncHistory) {
+      cfg.sync.registerNewDevice = false;
+      cfg.sync.resetSyncHistory = false;
+      configDirty = true;
+    }
+    if (configDirty) saveConfig(cfg);
+    const result = await runSyncSession(client, index, {
+      deviceId: device.deviceId,
+      paths: syncPaths,
       conflictPolicy: cfg.sync.conflictPolicy,
       unattended: false,
+    });
+
+    const lastResult =
+      result.failed === 0 && result.conflicts.length === 0
+        ? "ok"
+        : result.completed > 0
+          ? "partial"
+          : "error";
+    const current = readDaemonStatus();
+    writeDaemonStatus({
+      running: current.running,
+      pid: current.pid,
+      lastSyncAt: new Date().toISOString(),
+      lastResult,
+      lastError: result.errors[0] ?? null,
+      pendingConflicts: result.conflicts,
+      completedOps: result.completed,
+      failedOps: result.failed,
+    });
+
+    return toSyncResultReport(result, {
+      registered: device.registered,
+      updated: device.updated,
     });
   });
 

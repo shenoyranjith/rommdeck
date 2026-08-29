@@ -1,35 +1,28 @@
 import { existsSync, readdirSync, statSync } from "node:fs";
-import { join, basename, extname } from "node:path";
+import { basename, join } from "node:path";
 import type { RommClient } from "../romm/client.js";
-import type { ConflictPolicy, SyncMode } from "../config.js";
-import type { SyncLocalRom, SyncOperation } from "../romm/types.js";
+import type { ConflictPolicy } from "../config.js";
+import type { ClientSaveState, SyncOperation } from "../romm/types.js";
 import { LibraryIndex } from "../db/index.js";
-import { sha1File, fileMtimeIso } from "../hash.js";
+import { md5File, fileMtimeIso } from "../hash.js";
+import {
+  resolveExpectedSavePaths,
+  resolveLocalSavePath,
+  resolveLocalSaveFileName,
+  uniqueIndexedRomFiles,
+  slotForSaveFileName,
+  isStateFileName,
+  untagSaveFileName,
+} from "./save-paths.js";
 
-const SAVE_EXTS = new Set([
-  ".srm",
-  ".sav",
-  ".rtc",
-  ".eep",
-  ".fla",
-  ".mcr",
-  ".mcd",
-  ".vmp",
-  ".cds",
-]);
-const STATE_EXTS = new Set([
-  ".state",
-  ".state1",
-  ".state2",
-  ".state3",
-  ".state4",
-  ".state5",
-  ".state6",
-  ".state7",
-  ".state8",
-  ".state9",
-  ".state10",
-]);
+export { ensureDevice, type EnsureDeviceResult } from "./device.js";
+export {
+  toSyncResultReport,
+  summarizeSyncOperations,
+  type SyncResultReport,
+  type SyncDiscoveryReport,
+  type SyncOperationSummary,
+} from "./report.js";
 
 export interface SyncPaths {
   savesPath: string;
@@ -37,157 +30,175 @@ export interface SyncPaths {
   romsPath: string;
 }
 
+export interface SyncDiscoveryStats {
+  indexedRomFiles: number;
+  retroArchRomFiles: number;
+  skippedStandalonePlatforms: Set<string>;
+  existingSaveFiles: number;
+}
+
 export interface SyncResult {
-  sessionId: string | null;
+  sessionId: string | number | null;
   completed: number;
   failed: number;
   conflicts: SyncOperation[];
   errors: string[];
   operations: SyncOperation[];
+  discovery?: SyncDiscoveryStats;
 }
 
-function contentBasename(filename: string): string {
-  // Strip common multi-part / extension noise for matching
-  const base = basename(filename);
-  const withoutExt = base.replace(/\.[^.]+$/, "");
-  return withoutExt.replace(/\s*\(.*?\)\s*/g, "").trim().toLowerCase();
-}
-
-function walkFiles(root: string): string[] {
-  if (!existsSync(root)) return [];
-  const out: string[] = [];
-  const stack = [root];
-  while (stack.length) {
-    const dir = stack.pop()!;
-    let entries: string[];
-    try {
-      entries = readdirSync(dir);
-    } catch {
-      continue;
-    }
-    for (const name of entries) {
-      const full = join(dir, name);
-      let st;
-      try {
-        st = statSync(full);
-      } catch {
-        continue;
-      }
-      if (st.isDirectory()) stack.push(full);
-      else if (st.isFile()) out.push(full);
-    }
-  }
-  return out;
-}
-
-function isSaveOrState(path: string): "save" | "state" | null {
-  const ext = extname(path).toLowerCase();
-  const base = basename(path).toLowerCase();
-  if (SAVE_EXTS.has(ext)) return "save";
-  if (STATE_EXTS.has(ext) || /\.state\d*$/i.test(base)) return "state";
-  // RetroArch often uses .srm and numbered states without extension quirks
-  if (base.endsWith(".srm")) return "save";
-  return null;
-}
-
-/** Build negotiate payload from indexed ROMs + files under saves/states. */
+/** Build negotiate payload from indexed ROMs + deterministic RetroArch save paths. */
 export async function buildNegotiatePayload(
   index: LibraryIndex,
   paths: SyncPaths,
-): Promise<SyncLocalRom[]> {
-  const indexed = index.getAll();
-  const byRom = new Map<number, { basenames: Set<string>; files: SyncLocalRom["saves"] }>();
+): Promise<{ saves: ClientSaveState[]; discovery: SyncDiscoveryStats }> {
+  const indexed = uniqueIndexedRomFiles(index.getAll());
+  const skippedStandalonePlatforms = new Set<string>();
+  let retroArchRomFiles = 0;
+  const saves: ClientSaveState[] = [];
 
   for (const row of indexed) {
-    let entry = byRom.get(row.rom_id);
-    if (!entry) {
-      entry = { basenames: new Set(), files: [] };
-      byRom.set(row.rom_id, entry);
+    const expected = resolveExpectedSavePaths(row, {
+      savesPath: paths.savesPath,
+      statesPath: paths.statesPath,
+    });
+    if (expected.length === 0) {
+      skippedStandalonePlatforms.add(row.esde_folder);
+      continue;
     }
-    entry.basenames.add(contentBasename(row.filename));
-  }
+    retroArchRomFiles++;
 
-  const candidates = [...walkFiles(paths.savesPath), ...walkFiles(paths.statesPath)];
-  for (const filePath of candidates) {
-    if (!isSaveOrState(filePath)) continue;
-    const stem = contentBasename(filePath);
-    for (const [, entry] of byRom) {
-      // Match if save stem contains ROM basename or vice versa
-      let matched = false;
-      for (const bn of entry.basenames) {
-        if (!bn) continue;
-        if (stem === bn || stem.startsWith(bn) || bn.startsWith(stem)) {
-          matched = true;
-          break;
-        }
-      }
-      if (!matched) continue;
+    for (const candidate of expected) {
+      if (!existsSync(candidate.absolutePath)) continue;
+      let size = 0;
       try {
-        const sha1 = await sha1File(filePath);
-        const mtime = await fileMtimeIso(filePath);
-        entry.files.push({ file: basename(filePath), mtime, sha1 });
+        size = statSync(candidate.absolutePath).size;
       } catch {
-        // skip unreadable
+        continue;
       }
-      break;
+      try {
+        const content_hash = await md5File(candidate.absolutePath);
+        const updated_at = await fileMtimeIso(candidate.absolutePath);
+        saves.push({
+          rom_id: candidate.rom_id,
+          file_name: candidate.file_name,
+          slot: candidate.slot,
+          emulator: candidate.emulator,
+          content_hash,
+          updated_at,
+          file_size_bytes: size,
+        });
+      } catch {
+        // skip unreadable files
+      }
     }
   }
 
-  const roms: SyncLocalRom[] = [];
-  for (const [rom_id, entry] of byRom) {
-    roms.push({ rom_id, saves: entry.files });
-  }
-  return roms;
+  return {
+    saves,
+    discovery: {
+      indexedRomFiles: indexed.length,
+      retroArchRomFiles,
+      skippedStandalonePlatforms,
+      existingSaveFiles: saves.length,
+    },
+  };
 }
 
-function findLocalFile(paths: SyncPaths, file: string): string | null {
+function esdeFolderForRom(index: LibraryIndex, romId: number): string | null {
+  const rows = index.getByRomId(romId);
+  return rows[0]?.esde_folder ?? null;
+}
+
+function findLocalSaveFile(
+  index: LibraryIndex,
+  paths: SyncPaths,
+  op: SyncOperation,
+): string | null {
+  const esdeFolder = esdeFolderForRom(index, op.rom_id);
+  const fileName = localFileNameForOperation(index, op);
+  if (esdeFolder) {
+    const canonical = resolveLocalSavePath(
+      { savesPath: paths.savesPath, statesPath: paths.statesPath },
+      esdeFolder,
+      fileName,
+    );
+    if (existsSync(canonical)) return canonical;
+  }
+
+  // Fallback: basename match anywhere under saves/states (legacy paths).
+  return findByBasename(paths, fileName);
+}
+
+function findByBasename(paths: SyncPaths, fileName: string): string | null {
   for (const root of [paths.savesPath, paths.statesPath]) {
-    const direct = join(root, file);
-    if (existsSync(direct)) return direct;
-    for (const f of walkFiles(root)) {
-      if (basename(f) === file) return f;
+    if (!existsSync(root)) continue;
+    const stack = [root];
+    while (stack.length) {
+      const dir = stack.pop()!;
+      let entries: string[];
+      try {
+        entries = readdirSync(dir);
+      } catch {
+        continue;
+      }
+      for (const name of entries) {
+        const full = join(dir, name);
+        let st;
+        try {
+          st = statSync(full);
+        } catch {
+          continue;
+        }
+        if (st.isDirectory()) stack.push(full);
+        else if (basename(full) === fileName) return full;
+      }
     }
   }
   return null;
 }
 
-export async function ensureDevice(
-  client: RommClient,
-  opts: {
-    deviceId: number | null;
-    deviceName: string;
-    syncMode: SyncMode;
-    paths: SyncPaths;
-  },
-): Promise<number> {
-  if (opts.deviceId != null) return opts.deviceId;
-  const device = await client.registerDevice({
-    name: opts.deviceName,
-    platform: "retrodeck",
-    hostname: process.env.HOSTNAME ?? "rommdeck",
-    sync_mode: opts.syncMode,
-    paths: {
-      roms: opts.paths.romsPath,
-      saves: opts.paths.savesPath,
-      states: opts.paths.statesPath,
-    },
-  });
-  return device.id;
+function resolveDownloadDest(
+  index: LibraryIndex,
+  paths: SyncPaths,
+  op: SyncOperation,
+): string {
+  const esdeFolder = esdeFolderForRom(index, op.rom_id);
+  const fileName = localFileNameForOperation(index, op);
+  if (esdeFolder) {
+    return resolveLocalSavePath(
+      { savesPath: paths.savesPath, statesPath: paths.statesPath },
+      esdeFolder,
+      fileName,
+    );
+  }
+  if (op.dest_path) return op.dest_path;
+  const root = isStateFileName(fileName) ? paths.statesPath : paths.savesPath;
+  return join(root, fileName);
+}
+
+function localFileNameForOperation(index: LibraryIndex, op: SyncOperation): string {
+  const rows = index.getByRomId(op.rom_id);
+  const serverName = op.file_name ?? op.file;
+  if (rows[0]) {
+    return resolveLocalSaveFileName(rows[0].filename, serverName);
+  }
+  return untagSaveFileName(serverName);
 }
 
 export async function runSyncSession(
   client: RommClient,
   index: LibraryIndex,
   opts: {
-    deviceId: number;
+    deviceId: string | number;
     paths: SyncPaths;
     conflictPolicy: ConflictPolicy;
     /** When true, apply conflict policy automatically; otherwise leave pending. */
     unattended: boolean;
   },
 ): Promise<SyncResult> {
-  const roms = await buildNegotiatePayload(index, opts.paths);
-  const negotiated = await client.negotiate(opts.deviceId, roms);
+  const { saves, discovery } = await buildNegotiatePayload(index, opts.paths);
+  const negotiated = await client.negotiate(opts.deviceId, saves);
   const result: SyncResult = {
     sessionId: negotiated.session_id,
     completed: 0,
@@ -195,11 +206,12 @@ export async function runSyncSession(
     conflicts: [],
     errors: [],
     operations: negotiated.operations,
+    discovery,
   };
 
   for (const op of negotiated.operations) {
     try {
-      if (op.type === "noop") {
+      if (op.type === "no_op") {
         result.completed++;
         continue;
       }
@@ -208,44 +220,42 @@ export async function runSyncSession(
           result.conflicts.push(op);
           continue;
         }
-        const resolution = opts.conflictPolicy;
-        // Re-issue as resolved by applying policy locally
-        if (resolution === "device_wins" || resolution === "keep_both") {
-          const local = findLocalFile(opts.paths, op.file);
-          if (local && op.destination) {
-            await client.uploadSave(op.destination, local, {
-              rom_id: String(op.rom_id),
-              file: op.file,
-              resolution,
-            });
-          }
-        }
-        if (resolution === "server_wins" && op.source && op.dest_path) {
-          await client.downloadAsset(op.source, op.dest_path);
-        } else if (resolution === "server_wins" && op.source) {
-          const dest = join(opts.paths.savesPath, op.file);
-          await client.downloadAsset(op.source, dest);
-        }
+        await applyConflictPolicy(
+          client,
+          index,
+          opts.paths,
+          op,
+          opts.conflictPolicy,
+          {
+            deviceId: String(opts.deviceId),
+            sessionId: negotiated.session_id,
+          },
+        );
         result.completed++;
         continue;
       }
       if (op.type === "upload") {
-        const local = findLocalFile(opts.paths, op.file);
+        const local = findLocalSaveFile(index, opts.paths, op);
         if (!local) throw new Error(`Local file not found for upload: ${op.file}`);
-        if (!op.destination) throw new Error("Upload op missing destination");
-        await client.uploadSave(op.destination, local, {
-          rom_id: String(op.rom_id),
-          file: op.file,
+        await uploadSyncSave(client, op, local, {
+          deviceId: String(opts.deviceId),
+          sessionId: negotiated.session_id,
         });
         result.completed++;
         continue;
       }
       if (op.type === "download") {
-        if (!op.source) throw new Error("Download op missing source");
-        const dest =
-          op.dest_path ||
-          join(isSaveOrState(op.file) === "state" ? opts.paths.statesPath : opts.paths.savesPath, op.file);
-        await client.downloadAsset(op.source, dest);
+        const dest = resolveDownloadDest(index, opts.paths, op);
+        if (op.save_id != null) {
+          await client.downloadSaveContent(op.save_id, dest, {
+            deviceId: String(opts.deviceId),
+            sessionId: negotiated.session_id,
+          });
+        } else if (op.source) {
+          await client.downloadAsset(op.source, dest);
+        } else {
+          throw new Error("Download op missing save_id and source");
+        }
         result.completed++;
         continue;
       }
@@ -257,9 +267,9 @@ export async function runSyncSession(
     }
   }
 
-  if (negotiated.session_id) {
+  if (negotiated.session_id != null && negotiated.session_id !== "") {
     try {
-      await client.completeSession(negotiated.session_id, {
+      await client.completeSession(String(negotiated.session_id), {
         operations_completed: result.completed,
         operations_failed: result.failed,
         play_sessions: [],
@@ -272,4 +282,48 @@ export async function runSyncSession(
   }
 
   return result;
+}
+
+async function uploadSyncSave(
+  client: RommClient,
+  op: SyncOperation,
+  localPath: string,
+  ctx: { deviceId: string; sessionId: string | number | null | undefined },
+  overwrite = false,
+): Promise<void> {
+  await client.uploadSaveForSync(op.rom_id, localPath, {
+    slot: op.slot ?? slotForSaveFileName(op.file),
+    emulator: op.emulator ?? "retroarch",
+    deviceId: ctx.deviceId,
+    sessionId: ctx.sessionId ?? undefined,
+    overwrite,
+  });
+}
+
+async function applyConflictPolicy(
+  client: RommClient,
+  index: LibraryIndex,
+  paths: SyncPaths,
+  op: SyncOperation,
+  policy: ConflictPolicy,
+  ctx: { deviceId: string; sessionId: string | number | null | undefined },
+): Promise<void> {
+  if (policy === "device_wins" || policy === "keep_both") {
+    const local = findLocalSaveFile(index, paths, op);
+    if (!local) throw new Error(`Local file not found for conflict upload: ${op.file}`);
+    await uploadSyncSave(client, op, local, ctx, policy === "device_wins");
+  }
+  if (policy === "server_wins") {
+    const dest = resolveDownloadDest(index, paths, op);
+    if (op.save_id != null) {
+      await client.downloadSaveContent(op.save_id, dest, {
+        deviceId: ctx.deviceId,
+        sessionId: ctx.sessionId ?? undefined,
+      });
+    } else if (op.source) {
+      await client.downloadAsset(op.source, dest);
+    } else {
+      throw new Error("Conflict server_wins missing save_id/source");
+    }
+  }
 }
