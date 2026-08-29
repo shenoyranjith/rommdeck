@@ -9,6 +9,7 @@ import {
   runSyncSession,
   writeDaemonStatus,
   getLogsDir,
+  getConfigPath,
 } from "@rommdeck/core";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -26,6 +27,11 @@ function log(msg: string): void {
 
 async function syncOnce(reason: string): Promise<void> {
   const cfg = loadConfig();
+  if (!cfg.sync.enabled) {
+    log(`skip sync (${reason}): auto-sync disabled in config`);
+    return;
+  }
+
   if (!cfg.romm.baseUrl || !cfg.romm.apiToken) {
     log(`skip sync (${reason}): RomM not configured`);
     writeDaemonStatus({
@@ -127,11 +133,15 @@ async function main(): Promise<void> {
     pid: process.pid,
     lastError: null,
   });
-  log(`rommdeck-syncd starting pid=${process.pid} interval=${cfg.sync.intervalSeconds}s debounce=${cfg.sync.debounceSeconds}s`);
+  log(
+    `rommdeck-syncd starting pid=${process.pid} enabled=${cfg.sync.enabled} interval=${cfg.sync.intervalSeconds}s debounce=${cfg.sync.debounceSeconds}s`,
+  );
 
+  let debounceMs = Math.max(5, cfg.sync.debounceSeconds) * 1000;
   let debounceTimer: NodeJS.Timeout | null = null;
   let syncing = false;
   let pending = false;
+  let intervalHandle: ReturnType<typeof setInterval> | null = null;
 
   const trigger = async (reason: string) => {
     if (syncing) {
@@ -154,7 +164,26 @@ async function main(): Promise<void> {
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
       void trigger("fs-watch");
-    }, cfg.sync.debounceSeconds * 1000);
+    }, debounceMs);
+  };
+
+  const applyInterval = () => {
+    const current = loadConfig();
+    if (intervalHandle) clearInterval(intervalHandle);
+    intervalHandle = setInterval(
+      () => void trigger("interval"),
+      Math.max(60, current.sync.intervalSeconds) * 1000,
+    );
+  };
+
+  const reloadRuntimeConfig = () => {
+    const current = loadConfig();
+    debounceMs = Math.max(5, current.sync.debounceSeconds) * 1000;
+    applyInterval();
+    log(
+      `config reloaded enabled=${current.sync.enabled} interval=${current.sync.intervalSeconds}s debounce=${current.sync.debounceSeconds}s`,
+    );
+    return current;
   };
 
   const paths = resolveRetroDeckPaths(cfg.retrodeck);
@@ -173,16 +202,21 @@ async function main(): Promise<void> {
     log("no saves/states paths to watch");
   }
 
-  // Initial sync after short delay
-  setTimeout(() => void trigger("startup"), 2000);
+  chokidar.watch(getConfigPath()).on("change", () => {
+    reloadRuntimeConfig();
+  });
 
-  setInterval(
-    () => void trigger("interval"),
-    Math.max(60, cfg.sync.intervalSeconds) * 1000,
-  );
+  applyInterval();
+
+  if (cfg.sync.enabled) {
+    setTimeout(() => void trigger("startup"), 2000);
+  } else {
+    log("auto-sync disabled — idle until enabled in config");
+  }
 
   const shutdown = () => {
     log("shutting down");
+    if (intervalHandle) clearInterval(intervalHandle);
     writeDaemonStatus({ running: false, pid: null });
     process.exit(0);
   };

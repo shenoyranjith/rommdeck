@@ -41,7 +41,7 @@ npm run build:core
 # postinstall rebuilds better-sqlite3 for Electron's Node ABI
 ```
 
-Native module note: `better-sqlite3` must match the runtime. After `npm install`, `postinstall` rebuilds it for Electron. If the GUI shows a `NODE_MODULE_VERSION` error, run `npm run rebuild:electron`. For the Node-based sync daemon, run `npm run rebuild:node` first.
+Native module note: the GUI uses `better-sqlite3` built for **Electron** (repo `node_modules`). The sync daemon installs a **separate** Node build under `~/.local/share/rommdeck/syncd-runtime/` via `npm run install:syncd` — it does not run `rebuild:node` on the repo. If the GUI shows a `NODE_MODULE_VERSION` error, run `npm run rebuild:electron`.
 
 2. Configure RomM:
 
@@ -78,26 +78,20 @@ Create a token in RomM → Administration → Client API Tokens. For full RommDe
 
 ## Auto-sync daemon
 
-On this host:
-
-1. Build and install the daemon (local install via deploy script, or point the unit at your build):
+On this host, **Settings → Auto-sync → Enable** installs the systemd user unit on first use. Or install manually:
 
 ```bash
-npm run build:syncd
-# optional: REMOTE=user@host npm run deploy:syncd
-```
-
-2. Enable at login:
-
-```bash
+npm run install:syncd
 systemctl --user enable --now rommdeck-syncd.service
 ```
+
+This writes `~/.local/bin/rommdeck-syncd` and `~/.config/systemd/user/rommdeck-syncd.service` pointing at your repo build.
 
 Logs: `journalctl --user -u rommdeck-syncd.service -f`  
 Status file: `~/.local/share/rommdeck/daemon-status.json`  
 Config (shared with GUI): `~/.config/rommdeck/config.json`
 
-The GUI Sync page can toggle `systemctl --user enable/disable --now`. Settings → Auto-sync controls interval, debounce, sync direction, and conflict policy.
+The GUI Sync page can toggle auto-sync in **Settings → Auto-sync** (`systemctl --user enable/disable`). Interval, debounce, sync direction, and conflict policy are in the same section.
 
 **Triggers:** startup sync (~2s after launch), background interval (default 5 min), and filesystem watch on `saves_path` + `states_path` (debounced, e.g. 45s after last write).
 
@@ -114,7 +108,7 @@ RommDeck syncs **RetroArch battery saves** and **save states** with RomM via the
 | | Sync Now (GUI) | Auto-sync (`rommdeck-syncd`) |
 | --- | --- | --- |
 | When | On demand | At login, on interval, after save writes |
-| Conflicts | Shown in UI (`unattended: false`) | Auto-resolved via config (`unattended: true`) |
+| Conflicts | Auto-resolved via Settings policy | Auto-resolved via config policy |
 
 ### What syncs (v1)
 
@@ -140,7 +134,7 @@ Sort saves by content directory **on**; `savefiles_in_content_dir` **off**. Cust
 
 Default **`keep_both`**: if both copies changed before syncing, RomM keeps the server version and uploads yours as an additional save — nothing overwritten locally. Alternatives: `server_wins`, `device_wins`.
 
-Configure in Settings → Auto-sync. Manual **Sync Now** leaves conflicts pending for review (interactive resolution ships with the current save-sync rollout).
+Configure in Settings → Auto-sync. Manual **Sync Now** uses the same conflict policy as the daemon.
 
 ### Not in v1
 

@@ -49,13 +49,13 @@ todos:
     status: completed
   - id: settings-sync-ux
     content: 'Slim Sync page + Auto-sync Settings labels, conflict policy help text'
-    status: pending
+    status: completed
   - id: auto-sync-daemon
     content: 'Honor sync.enabled, systemd toggle, daemon restart on config change, watch saves_path + states_path'
-    status: pending
+    status: completed
   - id: conflict-ui
     content: 'Interactive per-conflict resolution on Sync page (manual sync)'
-    status: pending
+    status: cancelled
 isProject: false
 ---
 # RommDeck: RomM ↔ RetroDECK Desktop Bridge
@@ -264,7 +264,7 @@ New module: [`packages/core/src/sync/save-paths.ts`](packages/core/src/sync/save
 | --- | --- | --- |
 | Trigger | User button | systemd at login + interval + fs watch (debounced) |
 | Process | Electron `sync:now` IPC | Standalone Node CLI — runs when GUI is closed |
-| Conflicts | `unattended: false` — pending in UI | `unattended: true` — applies `sync.conflictPolicy` |
+| Conflicts | Applies Settings conflict policy | Applies config conflict policy |
 | Status | Sync page (daemon status read from file) | Writes `daemon-status.json` |
 
 Settings **Enable auto-sync** → `systemctl --user enable/disable --now rommdeck-syncd.service`. Both paths share `~/.config/rommdeck/config.json` and `library.db`.
@@ -279,7 +279,7 @@ Default: **`keep_both`** — RomM keeps the server copy and uploads yours as an 
 2. **manual-sync-ux** — Sync page results, skipped platforms, pending conflicts
 3. **settings-sync-ux** — slim Sync page, Auto-sync labels + conflict help text
 4. **auto-sync-daemon** — honor `sync.enabled`, restart on config change, watch both roots
-5. **conflict-ui** — interactive resolution on manual Sync Now
+5. **conflict-ui** — cancelled; manual sync uses the same conflict policy as the daemon
 
 ### Future releases
 

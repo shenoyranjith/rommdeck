@@ -16,4 +16,15 @@ export * from "./sync/protocol.js";
 export * from "./sync/save-paths.js";
 export * from "./sync/device.js";
 export * from "./sync/report.js";
+export {
+  installSyncDaemonUnit,
+  ensureSyncDaemonUnit,
+  isSyncDaemonUnitInstalled,
+  findRommDeckAppRoot,
+  syncDaemonUnitPath,
+  syncDaemonBinPath,
+  syncDaemonRuntimeDir,
+  refreshSyncDaemonRuntime,
+  type InstallSyncDaemonResult,
+} from "./sync/install-daemon.js";
 export * from "./daemon-status.js";

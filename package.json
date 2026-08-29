@@ -16,6 +16,7 @@
     "typecheck": "npm run typecheck -w @rommdeck/core && npm run typecheck -w @rommdeck/syncd && npm run typecheck -w @rommdeck/gui",
     "seed:dev": "bash scripts/seed-dev-tree.sh",
     "deploy:syncd": "bash scripts/deploy-syncd.sh",
+    "install:syncd": "bash scripts/install-syncd-local.sh",
     "rebuild:electron": "electron-rebuild -f -w better-sqlite3",
     "rebuild:node": "npm rebuild better-sqlite3",
     "test:core": "npm run rebuild:node && npm run test -w @rommdeck/core; npm run rebuild:electron",

@@ -40,6 +40,7 @@ function normalizeUi(
 export function SettingsPage() {
   const [cfg, setCfg] = useState<SettingsConfig | null>(null);
   const [paths, setPaths] = useState<PathsInfo | null>(null);
+  const [systemctlBusy, setSystemctlBusy] = useState(false);
   const { notifyOk, notifyError, clearNotification } = useNotification();
   const { status: connectionStatus, checkConnection } = useRommConnection();
   const [testing, setTesting] = useState(false);
@@ -167,6 +168,33 @@ export function SettingsPage() {
     debouncedPersist({ sync });
   };
 
+  const setAutoSyncEnabled = async (enabled: boolean) => {
+    const sync = { ...cfg.sync, enabled };
+    setCfg({ ...cfg, sync });
+    clearNotification();
+    setSystemctlBusy(true);
+    try {
+      if (enabled && !(await getApi().daemonInstalled())) {
+        const installed = await getApi().installDaemon();
+        if (!installed.ok) {
+          notifyError(installed.output || "Failed to install sync daemon");
+          return;
+        }
+      }
+      await persistPartial({ sync });
+      const ctl = await getApi().systemctl(enabled ? "enable" : "disable");
+      if (!ctl.ok) {
+        notifyError(ctl.output || "Failed to update sync daemon");
+        return;
+      }
+      notifyOk(enabled ? "Auto-sync enabled" : "Auto-sync disabled");
+    } catch (e) {
+      notifyError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSystemctlBusy(false);
+    }
+  };
+
   const test = async () => {
     setTesting(true);
     clearNotification();
@@ -223,7 +251,12 @@ export function SettingsPage() {
         );
       case "auto-sync":
         return (
-          <AutoSyncSection cfg={cfg} onChange={updateSync} />
+          <AutoSyncSection
+            cfg={cfg}
+            onChange={updateSync}
+            onEnableChange={setAutoSyncEnabled}
+            systemctlBusy={systemctlBusy}
+          />
         );
     }
   })();

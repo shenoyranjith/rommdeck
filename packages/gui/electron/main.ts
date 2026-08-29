@@ -30,6 +30,10 @@ import {
   ensureDevice,
   runSyncSession,
   toSyncResultReport,
+  ensureSyncDaemonUnit,
+  installSyncDaemonUnit,
+  refreshSyncDaemonRuntime,
+  isSyncDaemonUnitInstalled,
   rommSlugToEsdeFolder,
   loadBundledPlatformMap,
   romHasEsdeMetadata,
@@ -40,6 +44,24 @@ import {
 } from "@rommdeck/core";
 
 const execFileAsync = promisify(execFile);
+
+async function restartSyncDaemonIfActive(): Promise<void> {
+  if (process.platform !== "linux") return;
+  try {
+    const appRoot = path.resolve(__dirname, "../../..");
+    await refreshSyncDaemonRuntime([appRoot, process.cwd()]);
+    const { stdout } = await execFileAsync("systemctl", [
+      "--user",
+      "is-active",
+      "rommdeck-syncd.service",
+    ]);
+    if (stdout.trim() !== "active") return;
+    await execFileAsync("systemctl", ["--user", "restart", "rommdeck-syncd.service"]);
+  } catch {
+    // unit not installed or not running
+  }
+}
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 let mainWindow: BrowserWindow | null = null;
@@ -444,6 +466,8 @@ function registerIpc(): void {
   ipcMain.removeHandler("library:downloadedRoms");
   ipcMain.removeHandler("library:stats");
   ipcMain.removeHandler("daemon:status");
+  ipcMain.removeHandler("daemon:installed");
+  ipcMain.removeHandler("daemon:install");
   ipcMain.removeHandler("daemon:systemctl");
   ipcMain.removeHandler("sync:now");
   ipcMain.removeHandler("shell:openPath");
@@ -489,9 +513,12 @@ function registerIpc(): void {
     }
   });
 
-  ipcMain.handle("config:save", (_e, partial: Partial<RommDeckConfig>) => {
+  ipcMain.handle("config:save", async (_e, partial: Partial<RommDeckConfig>) => {
     const next = updateConfig(partial);
     resetDownloadManager();
+    if (partial.sync || partial.retrodeck) {
+      await restartSyncDaemonIfActive();
+    }
     return next;
   });
 
@@ -746,17 +773,32 @@ function registerIpc(): void {
 
   ipcMain.handle("daemon:status", () => readDaemonStatus());
 
-  ipcMain.handle("daemon:systemctl", async (_e, action: "enable" | "disable" | "start" | "stop" | "status") => {
+  ipcMain.handle("daemon:installed", () => isSyncDaemonUnitInstalled());
+
+  ipcMain.handle("daemon:install", async () => {
+    const appRoot = path.resolve(__dirname, "../../..");
+    return installSyncDaemonUnit([appRoot, process.cwd()]);
+  });
+
+  ipcMain.handle("daemon:systemctl", async (_e, action: "enable" | "disable" | "start" | "stop" | "status" | "restart") => {
     if (process.platform !== "linux") {
       return { ok: false, output: "systemd controls are only available on Linux" };
     }
     try {
+      if (action === "enable" && !isSyncDaemonUnitInstalled()) {
+        const appRoot = path.resolve(__dirname, "../../..");
+        const installed = await ensureSyncDaemonUnit([appRoot, process.cwd()]);
+        if (!installed.ok) return installed;
+      }
+
       const args =
         action === "enable"
           ? ["--user", "enable", "--now", "rommdeck-syncd.service"]
           : action === "disable"
             ? ["--user", "disable", "--now", "rommdeck-syncd.service"]
-            : ["--user", action, "rommdeck-syncd.service"];
+            : action === "restart"
+              ? ["--user", "restart", "rommdeck-syncd.service"]
+              : ["--user", action, "rommdeck-syncd.service"];
       const { stdout, stderr } = await execFileAsync("systemctl", args);
       return { ok: true, output: stdout || stderr };
     } catch (e) {
@@ -800,7 +842,7 @@ function registerIpc(): void {
       deviceId: device.deviceId,
       paths: syncPaths,
       conflictPolicy: cfg.sync.conflictPolicy,
-      unattended: false,
+      unattended: true,
     });
 
     const lastResult =

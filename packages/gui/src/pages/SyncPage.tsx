@@ -15,18 +15,9 @@ interface DaemonStatus {
   lastSyncAt: string | null;
   lastResult: "ok" | "error" | "partial" | null;
   lastError: string | null;
-  pendingConflicts: SyncConflict[];
   completedOps: number;
   failedOps: number;
   updatedAt: string;
-}
-
-interface SyncConflict {
-  rom_id: number;
-  file: string;
-  type?: string;
-  slot?: string | null;
-  reason?: string;
 }
 
 interface SyncDiscoveryReport {
@@ -48,9 +39,8 @@ interface SyncResultReport {
   sessionId: string | number | null;
   completed: number;
   failed: number;
-  conflicts: SyncConflict[];
   errors: string[];
-  operations: SyncConflict[];
+  operations: unknown[];
   discovery?: SyncDiscoveryReport;
   operationSummary: SyncOperationSummary;
   device?: {
@@ -98,10 +88,8 @@ export function SyncPage() {
     try {
       const result = (await getApi().syncNow()) as SyncResultReport;
       setLastManual(result);
-      const summary = result.operationSummary;
       notifyOk(
-        `Sync finished: ${result.completed} completed, ${result.failed} failed` +
-          (summary.conflict > 0 ? `, ${summary.conflict} conflicts need review` : ""),
+        `Sync finished: ${result.completed} completed, ${result.failed} failed`,
       );
       await refresh();
     } catch (e) {
@@ -111,10 +99,6 @@ export function SyncPage() {
     }
   };
 
-  const conflicts = lastManual
-    ? lastManual.conflicts
-    : (status?.pendingConflicts ?? []);
-
   const discovery = lastManual?.discovery;
   const opSummary = lastManual?.operationSummary;
 
@@ -122,7 +106,7 @@ export function SyncPage() {
     <div className="flex flex-col gap-4 pb-2">
       <PageHeader
         title="Sync"
-        description="Manual save and state sync with RomM (RetroArch saves from RetroDECK). RomM web-player saves are not synced. Auto-sync runs in the background via the systemd daemon."
+        description="RetroDECK saves and states with RomM."
         actions={
           <button
             type="button"
@@ -137,18 +121,16 @@ export function SyncPage() {
       />
 
       <p className="text-sm text-muted">
-        Configure interval, conflict policy, and auto-sync in{" "}
+        Auto-sync:{" "}
         <Link
           to="/settings?section=auto-sync"
           className="text-accent underline-offset-2 hover:underline"
         >
           Settings → Auto-sync
         </Link>
-        .
       </p>
 
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-        <Panel title="Sync status">
+      <Panel title="Sync status">
           <div className="space-y-2 p-4 text-sm">
             <p>
               Background daemon:{" "}
@@ -188,42 +170,7 @@ export function SyncPage() {
               Status updated {formatWhen(status?.updatedAt)}
             </p>
           </div>
-        </Panel>
-
-        <Panel title="Pending conflicts">
-          {conflicts.length === 0 ? (
-            <div className="px-4 py-10 text-center text-sm text-muted">
-              No pending conflicts
-            </div>
-          ) : (
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-line text-left text-[11px] tracking-wide text-muted uppercase">
-                  <th className="px-3 py-2.5 font-medium">ROM ID</th>
-                  <th className="px-3 py-2.5 font-medium">File</th>
-                  <th className="px-3 py-2.5 font-medium">Slot</th>
-                </tr>
-              </thead>
-              <tbody>
-                {conflicts.map((c, i) => (
-                  <tr
-                    key={`${c.rom_id}-${c.file}-${i}`}
-                    className="border-b border-line/70"
-                  >
-                    <td className="px-3 py-2.5 font-mono text-accent">
-                      {c.rom_id}
-                    </td>
-                    <td className="px-3 py-2.5 text-text">{c.file}</td>
-                    <td className="px-3 py-2.5 font-mono text-xs text-muted">
-                      {c.slot ?? "—"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </Panel>
-      </div>
+      </Panel>
 
       {lastManual && (
         <Panel title="Last manual sync" className="min-h-0">
