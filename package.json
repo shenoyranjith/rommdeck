@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "RomM ↔ RetroDECK desktop bridge",
+  "license": "MIT",
   "workspaces": [
     "packages/*"
   ],
