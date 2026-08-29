@@ -14,6 +14,7 @@ import {
 } from "../../theme";
 import { AppearanceSection } from "./AppearanceSection";
 import { AutoSyncSection } from "./AutoSyncSection";
+import { LoggingSection } from "./LoggingSection";
 import { RetrodeckSection } from "./RetrodeckSection";
 import { RommSection } from "./RommSection";
 import type { SettingsSectionId } from "./sections";
@@ -41,6 +42,7 @@ export function SettingsPage() {
   const [cfg, setCfg] = useState<SettingsConfig | null>(null);
   const [paths, setPaths] = useState<PathsInfo | null>(null);
   const [systemctlBusy, setSystemctlBusy] = useState(false);
+  const [logPath, setLogPath] = useState<string | null>(null);
   const { notifyOk, notifyError, clearNotification } = useNotification();
   const { status: connectionStatus, checkConnection } = useRommConnection();
   const [testing, setTesting] = useState(false);
@@ -54,7 +56,8 @@ export function SettingsPage() {
       section === "appearance" ||
       section === "romm" ||
       section === "retrodeck" ||
-      section === "auto-sync"
+      section === "auto-sync" ||
+      section === "logging"
     ) {
       setActiveSection(section);
     }
@@ -71,6 +74,7 @@ export function SettingsPage() {
         scanlineStrength: ui.scanlineStrength,
       });
       setPaths((await getApi().getRetroDeckPaths()) as PathsInfo);
+      setLogPath(await getApi().getLogPath());
     })();
   }, []);
 
@@ -168,6 +172,22 @@ export function SettingsPage() {
     debouncedPersist({ sync });
   };
 
+  const updateLogging = (logging: SettingsConfig["logging"]) => {
+    setCfg({ ...cfg, logging });
+    debouncedPersist({ logging });
+  };
+
+  const openLogFile = async () => {
+    if (!logPath) return;
+    clearNotification();
+    try {
+      const err = await getApi().openPath(logPath);
+      if (err) notifyError(err);
+    } catch (e) {
+      notifyError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
   const setAutoSyncEnabled = async (enabled: boolean) => {
     const sync = { ...cfg.sync, enabled };
     setCfg({ ...cfg, sync });
@@ -256,6 +276,15 @@ export function SettingsPage() {
             onChange={updateSync}
             onEnableChange={setAutoSyncEnabled}
             systemctlBusy={systemctlBusy}
+          />
+        );
+      case "logging":
+        return (
+          <LoggingSection
+            level={cfg.logging?.level ?? "info"}
+            logPath={logPath}
+            onLevelChange={(level) => updateLogging({ level })}
+            onOpenLog={() => void openLogFile()}
           />
         );
     }

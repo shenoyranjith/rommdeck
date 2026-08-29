@@ -172,7 +172,7 @@ When a ROM download completes, RommDeck syncs metadata from RomM into RetroDECKâ
 
 Text fields (`name`, `desc`, `genre`, `releasedate`, developer/publisher, etc.) come from RomM metadata. Local delete removes the matching gamelist entry and media files.
 
-Logs roll at 5 MB (`~/.local/share/rommdeck/logs/rommdeck.log`, up to 9 archives).
+Logs roll at 5 MB (`~/.local/share/rommdeck/logs/rommdeck.log`, up to 9 archives). Set verbosity in **Settings â†’ Logging** (Debug / Info / Warn / Error) and open the log file from there.
 
 ## Downloads queue
 

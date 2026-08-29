@@ -5,6 +5,7 @@ import type { ConflictPolicy } from "../config.js";
 import type { ClientSaveState, SyncOperation } from "../romm/types.js";
 import { LibraryIndex } from "../db/index.js";
 import { md5File, fileMtimeIso } from "../hash.js";
+import { log } from "../log.js";
 import {
   resolveExpectedSavePaths,
   resolveLocalSavePath,
@@ -105,6 +106,14 @@ export async function buildNegotiatePayload(
   };
 }
 
+function summarizeOperations(operations: SyncOperation[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const op of operations) {
+    counts[op.type] = (counts[op.type] ?? 0) + 1;
+  }
+  return counts;
+}
+
 function esdeFolderForRom(index: LibraryIndex, romId: number): string | null {
   const rows = index.getByRomId(romId);
   return rows[0]?.esde_folder ?? null;
@@ -198,7 +207,17 @@ export async function runSyncSession(
   },
 ): Promise<SyncResult> {
   const { saves, discovery } = await buildNegotiatePayload(index, opts.paths);
+  log.sync("negotiate start", {
+    deviceId: opts.deviceId,
+    localSaves: saves.length,
+    discovery,
+  });
   const negotiated = await client.negotiate(opts.deviceId, saves);
+  log.sync("negotiate complete", {
+    sessionId: negotiated.session_id,
+    operations: negotiated.operations.length,
+    summary: summarizeOperations(negotiated.operations),
+  });
   const result: SyncResult = {
     sessionId: negotiated.session_id,
     completed: 0,
@@ -212,9 +231,16 @@ export async function runSyncSession(
   for (const op of negotiated.operations) {
     try {
       if (op.type === "no_op") {
+        log.debug("sync", "no_op", { rom_id: op.rom_id, file: op.file, slot: op.slot });
         result.completed++;
         continue;
       }
+      log.debug("sync", `${op.type} start`, {
+        rom_id: op.rom_id,
+        file: op.file,
+        slot: op.slot,
+        save_id: op.save_id,
+      });
       if (op.type === "conflict") {
         if (!opts.unattended) {
           result.conflicts.push(op);
@@ -261,9 +287,13 @@ export async function runSyncSession(
       }
     } catch (e) {
       result.failed++;
-      result.errors.push(
-        `${op.type} ${op.file}: ${e instanceof Error ? e.message : String(e)}`,
-      );
+      const errMsg = e instanceof Error ? e.message : String(e);
+      log.error("sync", `${op.type} failed`, {
+        rom_id: op.rom_id,
+        file: op.file,
+        error: errMsg,
+      });
+      result.errors.push(`${op.type} ${op.file}: ${errMsg}`);
     }
   }
 
@@ -274,12 +304,27 @@ export async function runSyncSession(
         operations_failed: result.failed,
         play_sessions: [],
       });
+      log.sync("session complete", {
+        sessionId: negotiated.session_id,
+        completed: result.completed,
+        failed: result.failed,
+      });
     } catch (e) {
-      result.errors.push(
-        `complete: ${e instanceof Error ? e.message : String(e)}`,
-      );
+      const errMsg = e instanceof Error ? e.message : String(e);
+      log.error("sync", "session complete failed", {
+        sessionId: negotiated.session_id,
+        error: errMsg,
+      });
+      result.errors.push(`complete: ${errMsg}`);
     }
   }
+
+  log.sync("session finished", {
+    sessionId: result.sessionId,
+    completed: result.completed,
+    failed: result.failed,
+    conflicts: result.conflicts.length,
+  });
 
   return result;
 }

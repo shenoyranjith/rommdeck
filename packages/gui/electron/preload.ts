@@ -43,6 +43,7 @@ export interface RommDeckApi {
   installDaemon: () => Promise<{ ok: boolean; output: string }>;
   systemctl: (action: "enable" | "disable" | "start" | "stop" | "status" | "restart") => Promise<{ ok: boolean; output: string }>;
   syncNow: () => Promise<unknown>;
+  getLogPath: () => Promise<string>;
   openPath: (p: string) => Promise<string>;
   openExternal: (url: string) => Promise<{ ok: boolean; error?: string }>;
   getAppVersion: () => Promise<string>;
@@ -110,6 +111,7 @@ const api: RommDeckApi = {
   installDaemon: () => ipcRenderer.invoke("daemon:install"),
   systemctl: (action) => ipcRenderer.invoke("daemon:systemctl", action),
   syncNow: () => ipcRenderer.invoke("sync:now"),
+  getLogPath: () => ipcRenderer.invoke("logs:path"),
   openPath: (p) => ipcRenderer.invoke("shell:openPath", p),
   openExternal: (url) => ipcRenderer.invoke("shell:openExternal", url),
   getAppVersion: () => ipcRenderer.invoke("app:getVersion"),

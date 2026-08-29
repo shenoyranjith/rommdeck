@@ -1,4 +1,5 @@
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { configureLogging, type LogLevel, LOG_LEVELS } from "./log.js";
 import { getConfigDir, getConfigPath } from "./paths.js";
 
 export type ConflictPolicy = "keep_both" | "server_wins" | "device_wins";
@@ -45,11 +46,16 @@ export interface UiConfig {
   scanlineStrength: number;
 }
 
+export interface LoggingConfig {
+  level: LogLevel;
+}
+
 export interface RommDeckConfig {
   romm: RommConfig;
   retrodeck: RetroDeckConfig;
   sync: SyncConfig;
   ui: UiConfig;
+  logging: LoggingConfig;
   /** RomM slug → ES-DE folder overrides */
   platformMapOverrides: Record<string, string>;
 }
@@ -79,6 +85,9 @@ export const DEFAULT_CONFIG: RommDeckConfig = {
     theme: "candy",
     scanlines: true,
     scanlineStrength: 12,
+  },
+  logging: {
+    level: "info",
   },
   platformMapOverrides: {},
 };
@@ -157,12 +166,24 @@ export function loadConfig(): RommDeckConfig {
     cfg = { ...cfg, sync: { ...cfg.sync, deviceId: null } };
   }
 
+  const level = cfg.logging?.level;
+  cfg = {
+    ...cfg,
+    logging: {
+      level: LOG_LEVELS.includes(level as LogLevel)
+        ? (level as LogLevel)
+        : DEFAULT_CONFIG.logging.level,
+    },
+  };
+  configureLogging(cfg.logging.level);
+
   return cfg;
 }
 
 export function saveConfig(config: RommDeckConfig): void {
   const dir = getConfigDir();
   mkdirSync(dir, { recursive: true });
+  configureLogging(config.logging?.level ?? DEFAULT_CONFIG.logging.level);
   writeFileSync(getConfigPath(), JSON.stringify(config, null, 2), "utf8");
 }
 

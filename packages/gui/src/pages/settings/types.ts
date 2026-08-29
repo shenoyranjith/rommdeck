@@ -1,4 +1,5 @@
 import type { UiTheme } from "../../theme";
+import type { LogLevel } from "./loggingLabels";
 
 export interface SettingsConfig {
   romm: { baseUrl: string; apiToken: string };
@@ -21,6 +22,7 @@ export interface SettingsConfig {
     resetSyncHistory?: boolean;
   };
   ui: { theme: UiTheme; scanlines: boolean; scanlineStrength: number };
+  logging: { level: LogLevel };
   platformMapOverrides: Record<string, string>;
 }
 

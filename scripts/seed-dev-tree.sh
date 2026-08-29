@@ -46,6 +46,9 @@ if [[ ! -f "$MAIN_CFG" ]]; then
     "scanlines": true,
     "scanlineStrength": 12
   },
+  "logging": {
+    "level": "info"
+  },
   "platformMapOverrides": {}
 }
 EOF

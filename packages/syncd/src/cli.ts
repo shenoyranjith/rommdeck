@@ -8,32 +8,19 @@ import {
   ensureDevice,
   runSyncSession,
   writeDaemonStatus,
-  getLogsDir,
   getConfigPath,
+  log,
 } from "@rommdeck/core";
-import { appendFileSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
-
-function log(msg: string): void {
-  const line = `[${new Date().toISOString()}] ${msg}`;
-  console.log(line);
-  try {
-    mkdirSync(getLogsDir(), { recursive: true });
-    appendFileSync(join(getLogsDir(), "syncd.log"), line + "\n");
-  } catch {
-    // ignore log write failures
-  }
-}
 
 async function syncOnce(reason: string): Promise<void> {
   const cfg = loadConfig();
   if (!cfg.sync.enabled) {
-    log(`skip sync (${reason}): auto-sync disabled in config`);
+    log.daemon(`skip sync (${reason}): auto-sync disabled in config`);
     return;
   }
 
   if (!cfg.romm.baseUrl || !cfg.romm.apiToken) {
-    log(`skip sync (${reason}): RomM not configured`);
+    log.daemon(`skip sync (${reason}): RomM not configured`);
     writeDaemonStatus({
       running: true,
       pid: process.pid,
@@ -45,7 +32,7 @@ async function syncOnce(reason: string): Promise<void> {
 
   const paths = resolveRetroDeckPaths(cfg.retrodeck);
   if (!paths.savesPath || !paths.statesPath) {
-    log(`skip sync (${reason}): RetroDECK saves/states paths missing`);
+    log.daemon(`skip sync (${reason}): RetroDECK saves/states paths missing`);
     writeDaemonStatus({
       running: true,
       pid: process.pid,
@@ -83,7 +70,7 @@ async function syncOnce(reason: string): Promise<void> {
     }
     if (configDirty) saveConfig(cfg);
 
-    log(`sync start (${reason}) device=${device.deviceId}`);
+    log.daemon(`sync start (${reason})`, { deviceId: device.deviceId });
     const result = await runSyncSession(client, index, {
       deviceId: device.deviceId,
       paths: syncPaths,
@@ -108,12 +95,15 @@ async function syncOnce(reason: string): Promise<void> {
       completedOps: result.completed,
       failedOps: result.failed,
     });
-    log(
-      `sync done (${reason}) completed=${result.completed} failed=${result.failed} conflicts=${result.conflicts.length}`,
-    );
+    log.daemon(`sync done (${reason})`, {
+      completed: result.completed,
+      failed: result.failed,
+      conflicts: result.conflicts.length,
+      lastResult,
+    });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    log(`sync error (${reason}): ${msg}`);
+    log.error("daemon", `sync error (${reason})`, { error: msg });
     writeDaemonStatus({
       running: true,
       pid: process.pid,
@@ -133,9 +123,13 @@ async function main(): Promise<void> {
     pid: process.pid,
     lastError: null,
   });
-  log(
-    `rommdeck-syncd starting pid=${process.pid} enabled=${cfg.sync.enabled} interval=${cfg.sync.intervalSeconds}s debounce=${cfg.sync.debounceSeconds}s`,
-  );
+  log.daemon("rommdeck-syncd starting", {
+    pid: process.pid,
+    enabled: cfg.sync.enabled,
+    intervalSeconds: cfg.sync.intervalSeconds,
+    debounceSeconds: cfg.sync.debounceSeconds,
+    logLevel: cfg.logging.level,
+  });
 
   let debounceMs = Math.max(5, cfg.sync.debounceSeconds) * 1000;
   let debounceTimer: NodeJS.Timeout | null = null;
@@ -146,6 +140,7 @@ async function main(): Promise<void> {
   const trigger = async (reason: string) => {
     if (syncing) {
       pending = true;
+      log.debug("daemon", "sync queued", { reason });
       return;
     }
     syncing = true;
@@ -180,9 +175,12 @@ async function main(): Promise<void> {
     const current = loadConfig();
     debounceMs = Math.max(5, current.sync.debounceSeconds) * 1000;
     applyInterval();
-    log(
-      `config reloaded enabled=${current.sync.enabled} interval=${current.sync.intervalSeconds}s debounce=${current.sync.debounceSeconds}s`,
-    );
+    log.daemon("config reloaded", {
+      enabled: current.sync.enabled,
+      intervalSeconds: current.sync.intervalSeconds,
+      debounceSeconds: current.sync.debounceSeconds,
+      logLevel: current.logging.level,
+    });
     return current;
   };
 
@@ -194,12 +192,12 @@ async function main(): Promise<void> {
       awaitWriteFinish: { stabilityThreshold: 2000, pollInterval: 500 },
     });
     watcher.on("all", (event, path) => {
-      log(`fs ${event} ${path}`);
+      log.debug("daemon", "fs event", { event, path });
       scheduleDebounced();
     });
-    log(`watching ${watchRoots.join(", ")}`);
+    log.daemon("watching save paths", { roots: watchRoots });
   } else {
-    log("no saves/states paths to watch");
+    log.daemon("no saves/states paths to watch");
   }
 
   chokidar.watch(getConfigPath()).on("change", () => {
@@ -211,11 +209,11 @@ async function main(): Promise<void> {
   if (cfg.sync.enabled) {
     setTimeout(() => void trigger("startup"), 2000);
   } else {
-    log("auto-sync disabled — idle until enabled in config");
+    log.daemon("auto-sync disabled — idle until enabled in config");
   }
 
   const shutdown = () => {
-    log("shutting down");
+    log.daemon("shutting down");
     if (intervalHandle) clearInterval(intervalHandle);
     writeDaemonStatus({ running: false, pid: null });
     process.exit(0);
@@ -225,12 +223,13 @@ async function main(): Promise<void> {
 }
 
 main().catch((e) => {
-  console.error(e);
+  const msg = e instanceof Error ? e.message : String(e);
+  log.error("daemon", "fatal error", { error: msg });
   writeDaemonStatus({
     running: false,
     pid: null,
     lastResult: "error",
-    lastError: e instanceof Error ? e.message : String(e),
+    lastError: msg,
   });
   process.exit(1);
 });

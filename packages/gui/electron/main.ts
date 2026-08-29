@@ -45,6 +45,77 @@ import {
 
 const execFileAsync = promisify(execFile);
 
+function redactForLog(value: unknown): unknown {
+  if (typeof value === "string") {
+    return value.length > 120 ? `${value.slice(0, 80)}…(${value.length} chars)` : value;
+  }
+  if (Array.isArray(value)) {
+    return value.length > 8
+      ? [...value.slice(0, 8).map(redactForLog), `…+${value.length - 8}`]
+      : value.map(redactForLog);
+  }
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value)) {
+      if (k === "apiToken" || k === "token") {
+        out[k] = typeof v === "string" && v ? "[redacted]" : v;
+      } else {
+        out[k] = redactForLog(v);
+      }
+    }
+    return out;
+  }
+  return value;
+}
+
+function ipcSummary(_channel: string, args: unknown[]): Record<string, unknown> | undefined {
+  if (args.length === 0) return undefined;
+  const payload = args.length === 1 ? args[0] : args;
+  return { args: redactForLog(payload) };
+}
+
+function ipcHandler<A extends unknown[], R>(
+  channel: string,
+  fn: (...args: A) => R | Promise<R>,
+): (_event: Electron.IpcMainInvokeEvent, ...args: A) => Promise<R> {
+  return async (_event, ...args) => {
+    log.info("ipc", channel, ipcSummary(channel, args as unknown[]));
+    const started = Date.now();
+    try {
+      const result = await fn(...args);
+      log.debug("ipc", `${channel} ok`, { ms: Date.now() - started });
+      return result;
+    } catch (e) {
+      log.error("ipc", `${channel} failed`, {
+        ms: Date.now() - started,
+        error: e instanceof Error ? e.message : String(e),
+      });
+      throw e;
+    }
+  };
+}
+
+function ipcHandlerEvent<A extends unknown[], R>(
+  channel: string,
+  fn: (event: Electron.IpcMainInvokeEvent, ...args: A) => R | Promise<R>,
+): (event: Electron.IpcMainInvokeEvent, ...args: A) => Promise<R> {
+  return async (event, ...args) => {
+    log.info("ipc", channel, ipcSummary(channel, args as unknown[]));
+    const started = Date.now();
+    try {
+      const result = await fn(event, ...args);
+      log.debug("ipc", `${channel} ok`, { ms: Date.now() - started });
+      return result;
+    } catch (e) {
+      log.error("ipc", `${channel} failed`, {
+        ms: Date.now() - started,
+        error: e instanceof Error ? e.message : String(e),
+      });
+      throw e;
+    }
+  };
+}
+
 async function restartSyncDaemonIfActive(): Promise<void> {
   if (process.platform !== "linux") return;
   try {
@@ -56,6 +127,7 @@ async function restartSyncDaemonIfActive(): Promise<void> {
       "rommdeck-syncd.service",
     ]);
     if (stdout.trim() !== "active") return;
+    log.daemon("restarting sync daemon after config change");
     await execFileAsync("systemctl", ["--user", "restart", "rommdeck-syncd.service"]);
   } catch {
     // unit not installed or not running
@@ -470,6 +542,7 @@ function registerIpc(): void {
   ipcMain.removeHandler("daemon:install");
   ipcMain.removeHandler("daemon:systemctl");
   ipcMain.removeHandler("sync:now");
+  ipcMain.removeHandler("logs:path");
   ipcMain.removeHandler("shell:openPath");
   ipcMain.removeHandler("shell:openExternal");
   ipcMain.removeHandler("window:minimize");
@@ -480,61 +553,81 @@ function registerIpc(): void {
   ipcMain.removeHandler("app:getVersion");
   ipcMain.removeHandler("app:quitConfirmResponse");
 
-  ipcMain.handle("config:get", () => loadConfig());
+  ipcMain.handle("config:get", ipcHandler("config:get", () => loadConfig()));
 
   const windowFrom = (e: Electron.IpcMainInvokeEvent) =>
     BrowserWindow.fromWebContents(e.sender);
 
-  ipcMain.handle("app:getVersion", () => app.getVersion());
+  ipcMain.handle("app:getVersion", ipcHandler("app:getVersion", () => app.getVersion()));
 
-  ipcMain.handle("app:quitConfirmResponse", (_e, confirmed: unknown) => {
-    quitConfirmResolve?.(confirmed === true);
-    quitConfirmResolve = null;
-  });
+  ipcMain.handle(
+    "app:quitConfirmResponse",
+    ipcHandler("app:quitConfirmResponse", (_confirmed: unknown) => {
+      quitConfirmResolve?.(_confirmed === true);
+      quitConfirmResolve = null;
+    }),
+  );
 
-  ipcMain.handle("window:minimize", (e) => {
+  ipcMain.handle("window:minimize", ipcHandlerEvent("window:minimize", (e) => {
     windowFrom(e)?.minimize();
-  });
-  ipcMain.handle("window:maximize", (e) => {
+  }));
+  ipcMain.handle("window:maximize", ipcHandlerEvent("window:maximize", (e) => {
     const win = windowFrom(e);
     if (!win) return false;
     if (win.isMaximized()) win.unmaximize();
     else win.maximize();
     return win.isMaximized();
-  });
-  ipcMain.handle("window:close", (e) => {
+  }));
+  ipcMain.handle("window:close", ipcHandlerEvent("window:close", (e) => {
     windowFrom(e)?.close();
-  });
-  ipcMain.handle("window:isMaximized", (e) => windowFrom(e)?.isMaximized() ?? false);
-  ipcMain.handle("window:setBackground", (e, color: string) => {
-    const win = windowFrom(e);
-    if (win && typeof color === "string" && /^#[0-9a-fA-F]{6}$/.test(color)) {
-      win.setBackgroundColor(color);
-    }
-  });
+  }));
+  ipcMain.handle(
+    "window:isMaximized",
+    ipcHandlerEvent("window:isMaximized", (e) => windowFrom(e)?.isMaximized() ?? false),
+  );
+  ipcMain.handle(
+    "window:setBackground",
+    ipcHandlerEvent("window:setBackground", (e, color: string) => {
+      const win = windowFrom(e);
+      if (win && typeof color === "string" && /^#[0-9a-fA-F]{6}$/.test(color)) {
+        win.setBackgroundColor(color);
+      }
+    }),
+  );
 
-  ipcMain.handle("config:save", async (_e, partial: Partial<RommDeckConfig>) => {
-    const next = updateConfig(partial);
-    resetDownloadManager();
-    if (partial.sync || partial.retrodeck) {
-      await restartSyncDaemonIfActive();
-    }
-    return next;
-  });
+  ipcMain.handle(
+    "config:save",
+    ipcHandler("config:save", async (partial: Partial<RommDeckConfig>) => {
+      log.config("config save", { keys: Object.keys(partial) });
+      const next = updateConfig(partial);
+      resetDownloadManager();
+      if (partial.sync || partial.retrodeck) {
+        await restartSyncDaemonIfActive();
+      }
+      if (partial.logging) {
+        log.config("log level updated", { level: next.logging.level });
+      }
+      return next;
+    }),
+  );
 
-  ipcMain.handle("config:replace", (_e, full: RommDeckConfig) => {
-    saveConfig(full);
-    resetDownloadManager();
-    return loadConfig();
-  });
+  ipcMain.handle(
+    "config:replace",
+    ipcHandler("config:replace", (full: RommDeckConfig) => {
+      log.config("config replace");
+      saveConfig(full);
+      resetDownloadManager();
+      return loadConfig();
+    }),
+  );
 
-  ipcMain.handle("romm:test", async () => {
+  ipcMain.handle("romm:test", ipcHandler("romm:test", async () => {
     const cfg = loadConfig();
     const client = createRommClient(cfg.romm.baseUrl, cfg.romm.apiToken);
     return client.testConnection();
-  });
+  }));
 
-  ipcMain.handle("romm:platforms", async () => {
+  ipcMain.handle("romm:platforms", ipcHandler("romm:platforms", async () => {
     const cfg = loadConfig();
     const client = createRommClient(cfg.romm.baseUrl, cfg.romm.apiToken);
     const platforms = await client.getPlatforms();
@@ -545,47 +638,47 @@ function registerIpc(): void {
     }));
     scheduleQueueRestore();
     return result;
-  });
+  }));
 
   ipcMain.handle(
     "romm:roms",
-    async (
-      _e,
-      opts: {
+    ipcHandler(
+      "romm:roms",
+      async (opts: {
         platformId?: number;
         platformSlug?: string;
         searchTerm?: string;
         limit?: number;
         offset?: number;
+      }) => {
+        const cfg = loadConfig();
+        const client = createRommClient(cfg.romm.baseUrl, cfg.romm.apiToken);
+        const paths = resolveRetroDeckPaths(cfg.retrodeck);
+        const result = await client.getRoms(opts);
+        const index = getIndex();
+        const items = result.items.map((rom: RommRom) => {
+          const slug = rom.platform_slug ?? opts.platformSlug ?? "";
+          const local = romLocalFlags(
+            rom,
+            index,
+            paths.romsPath,
+            slug,
+            cfg.platformMapOverrides,
+            paths.rdHomePath,
+            paths.downloadedMediaPath,
+          );
+          return {
+            ...rom,
+            ...local,
+            coverUrl: client.coverUrlFor(rom),
+          };
+        });
+        return { ...result, items };
       },
-    ) => {
-      const cfg = loadConfig();
-      const client = createRommClient(cfg.romm.baseUrl, cfg.romm.apiToken);
-      const paths = resolveRetroDeckPaths(cfg.retrodeck);
-      const result = await client.getRoms(opts);
-      const index = getIndex();
-      const items = result.items.map((rom: RommRom) => {
-        const slug = rom.platform_slug ?? opts.platformSlug ?? "";
-        const local = romLocalFlags(
-          rom,
-          index,
-          paths.romsPath,
-          slug,
-          cfg.platformMapOverrides,
-          paths.rdHomePath,
-          paths.downloadedMediaPath,
-        );
-        return {
-          ...rom,
-          ...local,
-          coverUrl: client.coverUrlFor(rom),
-        };
-      });
-      return { ...result, items };
-    },
+    ),
   );
 
-  ipcMain.handle("romm:rom", async (_e, romId: number) => {
+  ipcMain.handle("romm:rom", ipcHandler("romm:rom", async (romId: number) => {
     const cfg = loadConfig();
     const client = createRommClient(cfg.romm.baseUrl, cfg.romm.apiToken);
     const paths = resolveRetroDeckPaths(cfg.retrodeck);
@@ -607,209 +700,257 @@ function registerIpc(): void {
       coverUrl: client.coverUrlFor(rom, "large"),
       coverUrlSmall: client.coverUrlFor(rom, "small"),
     };
-  });
+  }));
 
-  ipcMain.handle("paths:retrodeck", () => {
+  ipcMain.handle("paths:retrodeck", ipcHandler("paths:retrodeck", () => {
     const cfg = loadConfig();
     return resolveRetroDeckPaths(cfg.retrodeck);
-  });
+  }));
 
-  ipcMain.handle("platform:mapFolder", (_e, slug: string) => {
+  ipcMain.handle("platform:mapFolder", ipcHandler("platform:mapFolder", (slug: string) => {
     const cfg = loadConfig();
     return rommSlugToEsdeFolder(slug, cfg.platformMapOverrides);
-  });
+  }));
 
-  ipcMain.handle("platform:bundledMap", () => loadBundledPlatformMap());
+  ipcMain.handle(
+    "platform:bundledMap",
+    ipcHandler("platform:bundledMap", () => loadBundledPlatformMap()),
+  );
 
-  ipcMain.handle("downloads:enqueue", async (_e, romId: number, platformSlug: string) => {
-    const cfg = loadConfig();
-    const client = createRommClient(cfg.romm.baseUrl, cfg.romm.apiToken);
-    const rom = await client.getRom(romId);
-    return getDownloadManager().enqueue(rom, platformSlug);
-  });
+  ipcMain.handle(
+    "downloads:enqueue",
+    ipcHandler("downloads:enqueue", async (romId: number, platformSlug: string) => {
+      const cfg = loadConfig();
+      const client = createRommClient(cfg.romm.baseUrl, cfg.romm.apiToken);
+      const rom = await client.getRom(romId);
+      return getDownloadManager().enqueue(rom, platformSlug);
+    }),
+  );
 
   ipcMain.handle(
     "downloads:enqueueMany",
-    async (_e, items: { romId: number; platformSlug: string }[]) => {
-      const cfg = loadConfig();
-      const client = createRommClient(cfg.romm.baseUrl, cfg.romm.apiToken);
-      const dm = getDownloadManager();
-      const roms: { rom: RommRom; rommSlug: string }[] = [];
-      for (const item of items) {
-        const rom = await client.getRom(item.romId);
-        roms.push({ rom, rommSlug: item.platformSlug });
-      }
-      return dm.enqueueMany(roms);
-    },
+    ipcHandler(
+      "downloads:enqueueMany",
+      async (items: { romId: number; platformSlug: string }[]) => {
+        const cfg = loadConfig();
+        const client = createRommClient(cfg.romm.baseUrl, cfg.romm.apiToken);
+        const dm = getDownloadManager();
+        const roms: { rom: RommRom; rommSlug: string }[] = [];
+        for (const item of items) {
+          const rom = await client.getRom(item.romId);
+          roms.push({ rom, rommSlug: item.platformSlug });
+        }
+        return dm.enqueueMany(roms);
+      },
+    ),
   );
 
   ipcMain.handle(
     "downloads:enqueuePlatform",
-    async (_e, platformId: number, platformSlug: string) => {
+    ipcHandler(
+      "downloads:enqueuePlatform",
+      async (platformId: number, platformSlug: string) => {
+        const cfg = loadConfig();
+        const client = createRommClient(cfg.romm.baseUrl, cfg.romm.apiToken);
+        const paths = resolveRetroDeckPaths(cfg.retrodeck);
+        const index = getIndex();
+        const dm = getDownloadManager();
+        const pageSize = 100;
+        let offset = 0;
+        let total = Infinity;
+        let queued = 0;
+        let skipped = 0;
+
+        dm.beginBatch();
+        try {
+          while (offset < total) {
+            const page = await client.getRoms({
+              platformId,
+              limit: pageSize,
+              offset,
+            });
+            total = page.total;
+            for (const rom of page.items) {
+              const slug = rom.platform_slug ?? platformSlug;
+              if (isRomDownloaded(rom, index, paths.romsPath, slug, cfg.platformMapOverrides)) {
+                skipped++;
+                continue;
+              }
+              if (dm.isRomInQueue(rom.id)) {
+                skipped++;
+                continue;
+              }
+              dm.enqueue(rom, slug);
+              queued++;
+            }
+            offset += page.items.length;
+            if (page.items.length === 0) break;
+          }
+        } finally {
+          dm.endBatch();
+        }
+
+        return { queued, skipped, total: Number.isFinite(total) ? total : queued + skipped };
+      },
+    ),
+  );
+
+  ipcMain.handle(
+    "downloads:list",
+    ipcHandler("downloads:list", () => getDownloadManager().getQueueState()),
+  );
+  ipcMain.handle("downloads:cancel", ipcHandler("downloads:cancel", (jobId: string) => {
+    getDownloadManager().cancel(jobId);
+  }));
+  ipcMain.handle("downloads:cancelAll", ipcHandler("downloads:cancelAll", () => {
+    getDownloadManager().cancelAll();
+  }));
+  ipcMain.handle("downloads:retry", ipcHandler("downloads:retry", async (jobId: string) => {
+    return getDownloadManager().retry(jobId);
+  }));
+  ipcMain.handle("downloads:retryAll", ipcHandler("downloads:retryAll", async () => {
+    return getDownloadManager().retryAll();
+  }));
+  ipcMain.handle(
+    "downloads:dismissFailed",
+    ipcHandler("downloads:dismissFailed", (jobId: string) => {
+      getDownloadManager().dismissFailed(jobId);
+    }),
+  );
+  ipcMain.handle(
+    "downloads:clearFailed",
+    ipcHandler("downloads:clearFailed", () => {
+      getDownloadManager().clearFailed();
+    }),
+  );
+
+  ipcMain.handle(
+    "library:deleteLocal",
+    ipcHandler("library:deleteLocal", async (romId: number) => {
+      const cfg = loadConfig();
+      const paths = resolveRetroDeckPaths(cfg.retrodeck);
+      return deleteLocalRom(getIndex(), romId, {
+        rdHomePath: paths.rdHomePath,
+        downloadedMediaPath: paths.downloadedMediaPath,
+      });
+    }),
+  );
+
+  ipcMain.handle(
+    "library:downloadedIds",
+    ipcHandler("library:downloadedIds", (platformSlug?: string) => {
+      const index = getIndex();
+      if (platformSlug) return index.getDownloadedRomIdsForSlug(platformSlug);
+      return [...index.getDownloadedRomIds()];
+    }),
+  );
+
+  ipcMain.handle(
+    "library:downloadedRoms",
+    ipcHandler("library:downloadedRoms", async (platformSlug: string) => {
       const cfg = loadConfig();
       const client = createRommClient(cfg.romm.baseUrl, cfg.romm.apiToken);
       const paths = resolveRetroDeckPaths(cfg.retrodeck);
-      const index = getIndex();
-      const dm = getDownloadManager();
-      const pageSize = 100;
-      let offset = 0;
-      let total = Infinity;
-      let queued = 0;
-      let skipped = 0;
+      const ids = getIndex().getDownloadedRomIdsForSlug(platformSlug);
+      if (ids.length === 0) return [];
 
-      dm.beginBatch();
-      try {
-        while (offset < total) {
-          const page = await client.getRoms({
-            platformId,
-            limit: pageSize,
-            offset,
-          });
-          total = page.total;
-          for (const rom of page.items) {
-            const slug = rom.platform_slug ?? platformSlug;
-            if (isRomDownloaded(rom, index, paths.romsPath, slug, cfg.platformMapOverrides)) {
-              skipped++;
-              continue;
-            }
-            if (dm.isRomInQueue(rom.id)) {
-              skipped++;
-              continue;
-            }
-            dm.enqueue(rom, slug);
-            queued++;
+      const concurrency = 8;
+      const results: unknown[] = new Array(ids.length);
+      let cursor = 0;
+
+      async function worker() {
+        while (cursor < ids.length) {
+          const idx = cursor++;
+          const romId = ids[idx]!;
+          try {
+            const rom = await client.getRom(romId);
+            const local = romLocalFlags(
+              rom,
+              getIndex(),
+              paths.romsPath,
+              platformSlug,
+              cfg.platformMapOverrides,
+              paths.rdHomePath,
+              paths.downloadedMediaPath,
+            );
+            results[idx] = {
+              ...rom,
+              ...local,
+              coverUrl: client.coverUrlFor(rom),
+              coverUrlSmall: client.coverUrlFor(rom, "small"),
+            };
+          } catch {
+            results[idx] = null;
           }
-          offset += page.items.length;
-          if (page.items.length === 0) break;
         }
-      } finally {
-        dm.endBatch();
       }
 
-      return { queued, skipped, total: Number.isFinite(total) ? total : queued + skipped };
-    },
+      await Promise.all(
+        Array.from({ length: Math.min(concurrency, ids.length) }, () => worker()),
+      );
+      return results.filter(Boolean);
+    }),
   );
 
-  ipcMain.handle("downloads:list", () => getDownloadManager().getQueueState());
-  ipcMain.handle("downloads:cancel", (_e, jobId: string) => {
-    getDownloadManager().cancel(jobId);
-  });
-  ipcMain.handle("downloads:cancelAll", () => {
-    getDownloadManager().cancelAll();
-  });
-  ipcMain.handle("downloads:retry", async (_e, jobId: string) => {
-    return getDownloadManager().retry(jobId);
-  });
-  ipcMain.handle("downloads:retryAll", async () => {
-    return getDownloadManager().retryAll();
-  });
-  ipcMain.handle("downloads:dismissFailed", (_e, jobId: string) => {
-    getDownloadManager().dismissFailed(jobId);
-  });
-  ipcMain.handle("downloads:clearFailed", () => {
-    getDownloadManager().clearFailed();
-  });
+  ipcMain.handle(
+    "library:stats",
+    ipcHandler("library:stats", () => getIndex().getStats()),
+  );
 
-  ipcMain.handle("library:deleteLocal", async (_e, romId: number) => {
-    const cfg = loadConfig();
-    const paths = resolveRetroDeckPaths(cfg.retrodeck);
-    return deleteLocalRom(getIndex(), romId, {
-      rdHomePath: paths.rdHomePath,
-      downloadedMediaPath: paths.downloadedMediaPath,
-    });
-  });
+  ipcMain.handle(
+    "daemon:status",
+    ipcHandler("daemon:status", () => readDaemonStatus()),
+  );
 
-  ipcMain.handle("library:downloadedIds", (_e, platformSlug?: string) => {
-    const index = getIndex();
-    if (platformSlug) return index.getDownloadedRomIdsForSlug(platformSlug);
-    return [...index.getDownloadedRomIds()];
-  });
+  ipcMain.handle(
+    "daemon:installed",
+    ipcHandler("daemon:installed", () => isSyncDaemonUnitInstalled()),
+  );
 
-  ipcMain.handle("library:downloadedRoms", async (_e, platformSlug: string) => {
-    const cfg = loadConfig();
-    const client = createRommClient(cfg.romm.baseUrl, cfg.romm.apiToken);
-    const paths = resolveRetroDeckPaths(cfg.retrodeck);
-    const ids = getIndex().getDownloadedRomIdsForSlug(platformSlug);
-    if (ids.length === 0) return [];
+  ipcMain.handle(
+    "daemon:install",
+    ipcHandler("daemon:install", async () => {
+      const appRoot = path.resolve(__dirname, "../../..");
+      return installSyncDaemonUnit([appRoot, process.cwd()]);
+    }),
+  );
 
-    const concurrency = 8;
-    const results: unknown[] = new Array(ids.length);
-    let cursor = 0;
-
-    async function worker() {
-      while (cursor < ids.length) {
-        const idx = cursor++;
-        const romId = ids[idx]!;
-        try {
-          const rom = await client.getRom(romId);
-          const local = romLocalFlags(
-            rom,
-            getIndex(),
-            paths.romsPath,
-            platformSlug,
-            cfg.platformMapOverrides,
-            paths.rdHomePath,
-            paths.downloadedMediaPath,
-          );
-          results[idx] = {
-            ...rom,
-            ...local,
-            coverUrl: client.coverUrlFor(rom),
-            coverUrlSmall: client.coverUrlFor(rom, "small"),
-          };
-        } catch {
-          results[idx] = null;
+  ipcMain.handle(
+    "daemon:systemctl",
+    ipcHandler(
+      "daemon:systemctl",
+      async (action: "enable" | "disable" | "start" | "stop" | "status" | "restart") => {
+        if (process.platform !== "linux") {
+          return { ok: false, output: "systemd controls are only available on Linux" };
         }
-      }
-    }
+        try {
+          if (action === "enable" && !isSyncDaemonUnitInstalled()) {
+            const appRoot = path.resolve(__dirname, "../../..");
+            const installed = await ensureSyncDaemonUnit([appRoot, process.cwd()]);
+            if (!installed.ok) return installed;
+          }
 
-    await Promise.all(
-      Array.from({ length: Math.min(concurrency, ids.length) }, () => worker()),
-    );
-    return results.filter(Boolean);
-  });
+          const args =
+            action === "enable"
+              ? ["--user", "enable", "--now", "rommdeck-syncd.service"]
+              : action === "disable"
+                ? ["--user", "disable", "--now", "rommdeck-syncd.service"]
+                : action === "restart"
+                  ? ["--user", "restart", "rommdeck-syncd.service"]
+                  : ["--user", action, "rommdeck-syncd.service"];
+          const { stdout, stderr } = await execFileAsync("systemctl", args);
+          log.daemon(`systemctl ${action}`, { ok: true });
+          return { ok: true, output: stdout || stderr };
+        } catch (e) {
+          const output = e instanceof Error ? e.message : String(e);
+          log.error("daemon", `systemctl ${action} failed`, { error: output });
+          return { ok: false, output };
+        }
+      },
+    ),
+  );
 
-  ipcMain.handle("library:stats", () => getIndex().getStats());
-
-  ipcMain.handle("daemon:status", () => readDaemonStatus());
-
-  ipcMain.handle("daemon:installed", () => isSyncDaemonUnitInstalled());
-
-  ipcMain.handle("daemon:install", async () => {
-    const appRoot = path.resolve(__dirname, "../../..");
-    return installSyncDaemonUnit([appRoot, process.cwd()]);
-  });
-
-  ipcMain.handle("daemon:systemctl", async (_e, action: "enable" | "disable" | "start" | "stop" | "status" | "restart") => {
-    if (process.platform !== "linux") {
-      return { ok: false, output: "systemd controls are only available on Linux" };
-    }
-    try {
-      if (action === "enable" && !isSyncDaemonUnitInstalled()) {
-        const appRoot = path.resolve(__dirname, "../../..");
-        const installed = await ensureSyncDaemonUnit([appRoot, process.cwd()]);
-        if (!installed.ok) return installed;
-      }
-
-      const args =
-        action === "enable"
-          ? ["--user", "enable", "--now", "rommdeck-syncd.service"]
-          : action === "disable"
-            ? ["--user", "disable", "--now", "rommdeck-syncd.service"]
-            : action === "restart"
-              ? ["--user", "restart", "rommdeck-syncd.service"]
-              : ["--user", action, "rommdeck-syncd.service"];
-      const { stdout, stderr } = await execFileAsync("systemctl", args);
-      return { ok: true, output: stdout || stderr };
-    } catch (e) {
-      return {
-        ok: false,
-        output: e instanceof Error ? e.message : String(e),
-      };
-    }
-  });
-
-  ipcMain.handle("sync:now", async () => {
+  ipcMain.handle("sync:now", ipcHandler("sync:now", async () => {
     const cfg = loadConfig();
     const paths = resolveRetroDeckPaths(cfg.retrodeck);
     const client = createRommClient(cfg.romm.baseUrl, cfg.romm.apiToken);
@@ -867,26 +1008,31 @@ function registerIpc(): void {
       registered: device.registered,
       updated: device.updated,
     });
-  });
+  }));
 
-  ipcMain.handle("shell:openPath", (_e, p: string) => shell.openPath(p));
+  ipcMain.handle("logs:path", ipcHandler("logs:path", () => getAppLogPath()));
 
-  ipcMain.handle("shell:openExternal", async (_e, raw: unknown) => {
-    if (typeof raw !== "string" || !raw.trim()) {
-      return { ok: false, error: "URL is required" };
-    }
-    let parsed: URL;
-    try {
-      parsed = new URL(raw.trim());
-    } catch {
-      return { ok: false, error: "Invalid URL" };
-    }
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      return { ok: false, error: "Only http and https URLs are allowed" };
-    }
-    await shell.openExternal(parsed.href);
-    return { ok: true };
-  });
+  ipcMain.handle("shell:openPath", ipcHandler("shell:openPath", (p: string) => shell.openPath(p)));
+
+  ipcMain.handle(
+    "shell:openExternal",
+    ipcHandler("shell:openExternal", async (raw: unknown) => {
+      if (typeof raw !== "string" || !raw.trim()) {
+        return { ok: false, error: "URL is required" };
+      }
+      let parsed: URL;
+      try {
+        parsed = new URL(raw.trim());
+      } catch {
+        return { ok: false, error: "Invalid URL" };
+      }
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        return { ok: false, error: "Only http and https URLs are allowed" };
+      }
+      await shell.openExternal(parsed.href);
+      return { ok: true };
+    }),
+  );
 }
 
 function installRommAssetAuth(): void {
@@ -906,7 +1052,12 @@ function installRommAssetAuth(): void {
 }
 
 app.whenReady().then(async () => {
-  log.app("started", { version: app.getVersion(), logFile: getAppLogPath() });
+  const cfg = loadConfig();
+  log.app("started", {
+    version: app.getVersion(),
+    logFile: getAppLogPath(),
+    logLevel: cfg.logging.level,
+  });
   appIcon = loadAppIcon();
   const iconPath = resolveAppIconPath();
   if (iconPath) ensureLinuxDesktopIntegration();

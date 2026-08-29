@@ -3,6 +3,7 @@ import type { RommClient } from "../romm/client.js";
 import type { RommDevice } from "../romm/types.js";
 import type { SyncMode } from "../config.js";
 import type { SyncPaths } from "./protocol.js";
+import { log } from "../log.js";
 
 export interface DeviceRegistration {
   name: string;
@@ -107,8 +108,10 @@ export async function ensureDevice(
           sync_mode: opts.syncMode,
           sync_config: body.sync_config as { paths: Record<string, string> },
         });
+        log.sync("device updated", { deviceId: opts.deviceId, name: opts.deviceName });
         return { deviceId: opts.deviceId, registered: false, updated: true };
       }
+      log.debug("sync", "device unchanged", { deviceId: opts.deviceId });
       return { deviceId: opts.deviceId, registered: false, updated: false };
     } catch (e) {
       const status = e && typeof e === "object" && "status" in e ? (e as { status: number }).status : 0;
@@ -125,6 +128,11 @@ export async function ensureDevice(
     paths: body.paths as Record<string, string>,
     allow_duplicate: opts.registerNew ?? false,
     reset_syncs: opts.resetSyncHistory ?? false,
+  });
+  log.sync("device registered", {
+    deviceId: String(device.id),
+    registerNew: opts.registerNew ?? false,
+    resetSyncHistory: opts.resetSyncHistory ?? false,
   });
   return {
     deviceId: String(device.id),
