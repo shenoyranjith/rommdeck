@@ -99,6 +99,10 @@ fun LibraryScreen(
     var selectMode by remember { mutableStateOf(false) }
     var selectAll by remember { mutableStateOf(false) }
     var selectedIds by remember { mutableStateOf(setOf<Int>()) }
+    var focusedRomId by remember { mutableStateOf<Int?>(null) }
+    var detailRom by remember { mutableStateOf<RommRom?>(null) }
+    var detailError by remember { mutableStateOf<String?>(null) }
+    var detailQueryId by remember { mutableIntStateOf(0) }
 
     val visiblePlatforms = if (showEmpty) platforms else platforms.filter { (it.romCount ?: 0) > 0 }
     val canDownload = paths.romsPath.isNotBlank() && config.romm.baseUrl.isNotBlank()
@@ -109,14 +113,12 @@ fun LibraryScreen(
         RomFilter.DOWNLOADED -> downloadedDbOffset < downloadedDisplayTotal
         else -> catalogRoms.size < catalogTotal
     }
-    val visibleRoms = remember(filter, catalogRoms, downloadedRoms, downloadedIds, search) {
-        val base = when (filter) {
+    val visibleRoms = remember(filter, catalogRoms, downloadedRoms, downloadedIds) {
+        when (filter) {
             RomFilter.DOWNLOADED -> downloadedRoms
             RomFilter.MISSING -> catalogRoms.filter { it.id !in downloadedIds }
             else -> catalogRoms
         }
-        if (search.isBlank() || filter == RomFilter.DOWNLOADED) base
-        else base.filter { it.name.contains(search, ignoreCase = true) }
     }
     val selectionTotal = when (filter) {
         RomFilter.DOWNLOADED -> if (search.isBlank()) downloadedTotal else visibleRoms.size
@@ -133,16 +135,16 @@ fun LibraryScreen(
     val displaySelectedIds = if (selectAll) visibleRoms.map { it.id }.toSet() else selectedIds
     val hasSelection = selectAll || selectedIds.isNotEmpty()
 
-    fun exitSelectMode() {
-        selectMode = false
-        selectAll = false
-        selectedIds = emptySet()
+    fun closeDetail() {
+        focusedRomId = null
+        detailRom = null
+        detailError = null
     }
 
-    fun enterSelectMode() {
-        selectMode = true
-        selectAll = false
-        selectedIds = emptySet()
+    fun focusRom(rom: RommRom) {
+        focusedRomId = rom.id
+        detailRom = rom
+        detailError = null
     }
 
     fun toggleSelect(id: Int) {
@@ -152,6 +154,23 @@ fun LibraryScreen(
             return
         }
         selectedIds = if (id in selectedIds) selectedIds - id else selectedIds + id
+    }
+
+    fun onRomCardClick(rom: RommRom) {
+        if (selectMode) toggleSelect(rom.id) else focusRom(rom)
+    }
+
+    fun exitSelectMode() {
+        selectMode = false
+        selectAll = false
+        selectedIds = emptySet()
+    }
+
+    fun enterSelectMode() {
+        closeDetail()
+        selectMode = true
+        selectAll = false
+        selectedIds = emptySet()
     }
 
     fun onSelectionButtonClick() {
@@ -167,9 +186,51 @@ fun LibraryScreen(
         selectedIds = visibleRoms.map { it.id }.toSet()
     }
 
+    fun romOnDisk(rom: RommRom): Boolean =
+        filter == RomFilter.DOWNLOADED || rom.id in downloadedIds
+
+    fun handleRomDeleted(id: Int) {
+        if (id !in downloadedIds) return
+        downloadedIds = downloadedIds - id
+        downloadedTotal = maxOf(0, downloadedTotal - 1)
+        if (filter == RomFilter.DOWNLOADED) {
+            downloadedRoms = downloadedRoms.filter { it.id != id }
+            if (search.isNotBlank()) {
+                downloadedSearchTotal = maxOf(0, downloadedSearchTotal - 1)
+            }
+        }
+    }
+
     LaunchedEffect(searchInput) {
         delay(300)
         search = searchInput.trim()
+    }
+
+    LaunchedEffect(focusedRomId) {
+        val romId = focusedRomId ?: return@LaunchedEffect
+        val queryId = ++detailQueryId
+        detailError = null
+        try {
+            val full = withContext(Dispatchers.IO) {
+                val client = createRommClient(config.romm)
+                try {
+                    client.getRom(romId)
+                } finally {
+                    client.close()
+                }
+            }
+            if (queryId == detailQueryId) {
+                detailRom = full
+            }
+        } catch (e: Exception) {
+            if (queryId == detailQueryId) {
+                detailError = e.message ?: e.toString()
+            }
+        }
+    }
+
+    LaunchedEffect(selected?.id, filter, search) {
+        closeDetail()
     }
 
     LaunchedEffect(config.romm.baseUrl, config.romm.apiToken) {
@@ -443,12 +504,13 @@ fun LibraryScreen(
                                         index.close()
                                     }
                                 }
-                                downloadedIds = downloadedIds - ids.toSet()
+                                val removed = ids.filter { it in downloadedIds }
+                                downloadedIds = downloadedIds - removed.toSet()
+                                downloadedTotal = maxOf(0, downloadedTotal - removed.size)
                                 if (filter == RomFilter.DOWNLOADED) {
-                                    downloadedRoms = downloadedRoms.filter { it.id !in ids }
-                                    downloadedTotal = maxOf(0, downloadedTotal - ids.size)
+                                    downloadedRoms = downloadedRoms.filter { it.id !in removed }
                                     if (search.isNotBlank()) {
-                                        downloadedSearchTotal = maxOf(0, downloadedSearchTotal - ids.size)
+                                        downloadedSearchTotal = maxOf(0, downloadedSearchTotal - removed.size)
                                     }
                                 }
                                 onStatsChanged()
@@ -737,19 +799,6 @@ fun LibraryScreen(
                     .fillMaxSize()
                     .padding(end = RdScrollbarThickness)
                 Box(Modifier.weight(1f).fillMaxWidth().padding(8.dp)) {
-                val onDisk: (RommRom) -> Boolean = { rom ->
-                    filter == RomFilter.DOWNLOADED || rom.id in downloadedIds
-                }
-                val onRomDeleted: (Int) -> Unit = { id ->
-                    downloadedIds = downloadedIds - id
-                    if (filter == RomFilter.DOWNLOADED) {
-                        downloadedRoms = downloadedRoms.filter { it.id != id }
-                        downloadedTotal = maxOf(0, downloadedTotal - 1)
-                        if (search.isNotBlank()) {
-                            downloadedSearchTotal = maxOf(0, downloadedSearchTotal - 1)
-                        }
-                    }
-                }
                 if (viewMode == LibraryViewMode.LIST) {
                     LazyColumn(
                         state = romListState,
@@ -762,16 +811,18 @@ fun LibraryScreen(
                                 rom = rom,
                                 rommBaseUrl = config.romm.baseUrl,
                                 apiToken = config.romm.apiToken,
-                                onDisk = onDisk(rom),
+                                onDisk = romOnDisk(rom),
                                 canDownload = canDownload,
                                 queue = queue,
                                 onNotice = onNotice,
                                 onStatsChanged = onStatsChanged,
                                 startPump = ::startPump,
-                                onDeleted = onRomDeleted,
+                                onDeleted = ::handleRomDeleted,
                                 selectMode = selectMode,
                                 isSelected = rom.id in displaySelectedIds,
+                                isFocused = focusedRomId == rom.id,
                                 onToggleSelect = { toggleSelect(rom.id) },
+                                onCardClick = { onRomCardClick(rom) },
                             )
                         }
                     }
@@ -793,16 +844,18 @@ fun LibraryScreen(
                                 rom = rom,
                                 rommBaseUrl = config.romm.baseUrl,
                                 apiToken = config.romm.apiToken,
-                                onDisk = onDisk(rom),
+                                onDisk = romOnDisk(rom),
                                 canDownload = canDownload,
                                 queue = queue,
                                 onNotice = onNotice,
                                 onStatsChanged = onStatsChanged,
                                 startPump = ::startPump,
-                                onDeleted = onRomDeleted,
+                                onDeleted = ::handleRomDeleted,
                                 selectMode = selectMode,
                                 isSelected = rom.id in displaySelectedIds,
+                                isFocused = focusedRomId == rom.id,
                                 onToggleSelect = { toggleSelect(rom.id) },
+                                onCardClick = { onRomCardClick(rom) },
                             )
                         }
                     }
@@ -813,12 +866,54 @@ fun LibraryScreen(
                 }
                 }
             }
+
+            if (focusedRomId != null) {
+                RomDetailPane(
+                    detail = detailRom,
+                    detailError = detailError,
+                    platform = selected,
+                    onDisk = detailRom?.let { romOnDisk(it) } == true,
+                    loading = detailRom == null && detailError == null,
+                    queueStatus = focusedRomId?.let { queue.activeJobStatus(it) },
+                    canDownload = canDownload,
+                    rommBaseUrl = config.romm.baseUrl,
+                    apiToken = config.romm.apiToken,
+                    onClose = ::closeDetail,
+                    onDownload = { rom ->
+                        if (!canDownload) {
+                            onNotice("Set RomM URL and a ROM folder in Settings")
+                            return@RomDetailPane
+                        }
+                        val n = queue.enqueue(listOf(rom))
+                        if (n == 0) onNotice("Already queued")
+                        else {
+                            onNotice("Queued ${rom.name}")
+                            startPump()
+                        }
+                    },
+                    onDelete = { rom ->
+                        scope.launch {
+                            withContext(Dispatchers.IO) {
+                                val index = openLibraryIndex()
+                                try {
+                                    deleteLocalRom(index, rom.id)
+                                } finally {
+                                    index.close()
+                                }
+                            }
+                            handleRomDeleted(rom.id)
+                            onStatsChanged()
+                            onNotice("Removed local files")
+                        }
+                    },
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun RomCoverFallback(modifier: Modifier = Modifier, compact: Boolean = false) {
+internal fun RomCoverFallback(modifier: Modifier = Modifier, compact: Boolean = false) {
     val c = Rd
     Column(
         modifier,
@@ -851,7 +946,9 @@ private fun RomListItem(
     onDeleted: (Int) -> Unit,
     selectMode: Boolean = false,
     isSelected: Boolean = false,
+    isFocused: Boolean = false,
     onToggleSelect: () -> Unit = {},
+    onCardClick: () -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val coverUrl = coverUrlFor(rommBaseUrl, rom)
@@ -866,7 +963,9 @@ private fun RomListItem(
         onDisk = onDisk,
         selectMode = selectMode,
         isSelected = isSelected,
+        isFocused = isFocused,
         onToggleSelect = onToggleSelect,
+        onCardClick = onCardClick,
         onDownload = {
             if (!canDownload) {
                 onNotice("Set RomM URL and a ROM folder in Settings")
@@ -912,7 +1011,9 @@ private fun RomGridCard(
     onDeleted: (Int) -> Unit,
     selectMode: Boolean = false,
     isSelected: Boolean = false,
+    isFocused: Boolean = false,
     onToggleSelect: () -> Unit = {},
+    onCardClick: () -> Unit = {},
 ) {
     val c = Rd
     val scope = rememberCoroutineScope()
@@ -925,11 +1026,20 @@ private fun RomGridCard(
             .fillMaxWidth()
             .border(
                 1.dp,
-                if (isSelected) c.accent else c.accent.copy(alpha = 0.8f),
+                when {
+                    isFocused || isSelected -> c.accent
+                    else -> c.accent.copy(alpha = 0.8f)
+                },
                 RectangleShape,
             )
             .background(c.bg2, RectangleShape)
-            .then(if (selectMode) Modifier.rdInteractive(onClick = onToggleSelect) else Modifier),
+            .then(
+                if (selectMode) {
+                    Modifier.rdInteractive(onClick = onToggleSelect)
+                } else {
+                    Modifier.rdInteractive(onClick = onCardClick)
+                },
+            ),
     ) {
         Box(
             Modifier
@@ -1052,16 +1162,31 @@ private fun RomRow(
     apiToken: String = "",
     selectMode: Boolean = false,
     isSelected: Boolean = false,
+    isFocused: Boolean = false,
     onToggleSelect: () -> Unit = {},
+    onCardClick: () -> Unit = {},
 ) {
     val c = Rd
     Row(
         Modifier
             .fillMaxWidth()
             .height(72.dp)
-            .border(1.dp, if (isSelected) c.accent else c.accent.copy(alpha = 0.7f), RectangleShape)
-            .background(if (isSelected) c.accent.copy(alpha = 0.15f) else c.bg2)
-            .then(if (selectMode) Modifier.rdInteractive(onClick = onToggleSelect) else Modifier)
+            .border(
+                1.dp,
+                when {
+                    isFocused || isSelected -> c.accent
+                    else -> c.accent.copy(alpha = 0.7f)
+                },
+                RectangleShape,
+            )
+            .background(if (isSelected || isFocused) c.accent.copy(alpha = 0.15f) else c.bg2)
+            .then(
+                if (selectMode) {
+                    Modifier.rdInteractive(onClick = onToggleSelect)
+                } else {
+                    Modifier.rdInteractive(onClick = onCardClick)
+                },
+            )
             .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),

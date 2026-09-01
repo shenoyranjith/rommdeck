@@ -155,14 +155,16 @@ fun RdIconButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     selected: Boolean = false,
+    compact: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val c = Rd
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
+    val buttonSize = if (compact) 28.dp else RdControlHeight
     Box(
         modifier
-            .size(RdControlHeight)
+            .size(buttonSize)
             .hoverable(interaction, enabled)
             .clickable(interaction, null, enabled, onClick = onClick)
             .then(if (enabled) Modifier.pointerHoverIcon(PointerIcon.Hand) else Modifier)
