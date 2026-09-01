@@ -1,0 +1,2 @@
+OFL-1.1: IBM Plex Sans and IBM Plex Mono
+Copyright © 2017 IBM Corp. https://github.com/IBM/plex

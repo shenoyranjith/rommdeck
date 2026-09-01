@@ -1,0 +1,107 @@
+-- Matches packages/core/src/db (migrations 001 + 002).
+CREATE TABLE IF NOT EXISTS rom_files (
+  id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  rom_id INTEGER NOT NULL,
+  romm_slug TEXT NOT NULL,
+  esde_folder TEXT NOT NULL,
+  filename TEXT NOT NULL,
+  size INTEGER,
+  sha1 TEXT,
+  path TEXT NOT NULL UNIQUE,
+  downloaded_at TEXT NOT NULL,
+  verified INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE INDEX IF NOT EXISTS idx_rom_files_rom_id ON rom_files(rom_id);
+CREATE INDEX IF NOT EXISTS idx_rom_files_slug ON rom_files(romm_slug);
+
+upsertFile:
+INSERT INTO rom_files(rom_id, romm_slug, esde_folder, filename, size, sha1, path, downloaded_at, verified)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(path) DO UPDATE SET
+  rom_id = excluded.rom_id,
+  romm_slug = excluded.romm_slug,
+  esde_folder = excluded.esde_folder,
+  filename = excluded.filename,
+  size = excluded.size,
+  sha1 = excluded.sha1,
+  downloaded_at = excluded.downloaded_at,
+  verified = excluded.verified;
+
+selectByRomId:
+SELECT *
+FROM rom_files
+WHERE rom_id = ?;
+
+selectAll:
+SELECT *
+FROM rom_files
+ORDER BY romm_slug, filename;
+
+selectDistinctRomIds:
+SELECT DISTINCT rom_id
+FROM rom_files
+ORDER BY rom_id;
+
+selectDistinctRomIdsForSlug:
+SELECT DISTINCT rom_id
+FROM rom_files
+WHERE romm_slug = ?
+ORDER BY rom_id;
+
+selectDistinctRomIdsForSlugSearch:
+SELECT DISTINCT rom_id
+FROM rom_files
+WHERE romm_slug = ?
+  AND LOWER(filename) LIKE '%' || LOWER(?) || '%'
+ORDER BY rom_id;
+
+selectDistinctRomIdsForSlugPaged:
+SELECT DISTINCT rom_id
+FROM rom_files
+WHERE romm_slug = ?
+ORDER BY rom_id
+LIMIT ? OFFSET ?;
+
+selectDistinctRomIdsForSlugSearchPaged:
+SELECT DISTINCT rom_id
+FROM rom_files
+WHERE romm_slug = ?
+  AND LOWER(filename) LIKE '%' || LOWER(?) || '%'
+ORDER BY rom_id
+LIMIT ? OFFSET ?;
+
+countDistinctRomIdsForSlugSearch:
+SELECT COUNT(DISTINCT rom_id)
+FROM rom_files
+WHERE romm_slug = ?
+  AND LOWER(filename) LIKE '%' || LOWER(?) || '%';
+
+countDistinctRomIdsForSlug:
+SELECT COUNT(DISTINCT rom_id)
+FROM rom_files
+WHERE romm_slug = ?;
+
+selectStats:
+SELECT
+  COUNT(DISTINCT rom_id) AS downloaded_roms,
+  COALESCE(SUM(size), 0) AS storage_bytes
+FROM rom_files;
+
+selectByFilename:
+SELECT *
+FROM rom_files
+WHERE filename = ?;
+
+selectByFilenameAndFolder:
+SELECT *
+FROM rom_files
+WHERE filename = ? AND esde_folder = ?;
+
+deleteByRomId:
+DELETE FROM rom_files
+WHERE rom_id = ?;
+
+deleteByPath:
+DELETE FROM rom_files
+WHERE path = ?;

@@ -12,3 +12,12 @@ coverage/
 .vite/
 *.db
 *.db-journal
+
+# Kotlin / Gradle (src/ rewrite)
+src/.gradle/
+src/**/build/
+src/.kotlin/
+src/local.properties
+src/apps/android/.cxx/
+src/.idea/
+src/.vscode/
