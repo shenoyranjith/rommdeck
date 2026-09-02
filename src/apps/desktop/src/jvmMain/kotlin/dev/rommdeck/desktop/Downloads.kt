@@ -70,6 +70,7 @@ class SessionDownloadQueue {
     val runningCount: Int get() = jobs.count { it.status == DownloadJobStatus.RUNNING }
     val metadataCount: Int get() = jobs.count { it.status == DownloadJobStatus.METADATA }
     val failedCount: Int get() = jobs.count { it.status == DownloadJobStatus.FAILED }
+    val activeCount: Int get() = queuedCount + runningCount + metadataCount
 
     /** Increments when a download completes successfully (used to refresh library state). */
     var completionCount by mutableStateOf(0)

@@ -325,6 +325,7 @@ fun RdNavItem(
     icon: RdIconKind? = null,
     iconSize: Dp = 32.dp,
     compact: Boolean = false,
+    badgeCount: Int? = null,
     leading: (@Composable () -> Unit)? = null,
 ) {
     val c = Rd
@@ -359,7 +360,9 @@ fun RdNavItem(
                 .background(if (selected) c.accent else Color.Transparent),
         )
         Row(
-            Modifier.padding(horizontal = 12.dp),
+            Modifier
+                .padding(horizontal = 12.dp)
+                .fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
@@ -369,13 +372,39 @@ fun RdNavItem(
             }
             Text(
                 label,
+                modifier = Modifier.weight(1f),
                 color = if (selected) c.accent else c.text,
                 style = if (compact) RdType.body.copy(fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
                 else RdType.nav.copy(fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            if (badgeCount != null && badgeCount > 0) {
+                RdNavBadge(badgeCount, selected)
+            }
         }
+    }
+}
+
+@Composable
+private fun RdNavBadge(count: Int, selected: Boolean) {
+    val c = Rd
+    val label = if (count > 99) "99+" else count.toString()
+    Box(
+        Modifier
+            .border(1.dp, c.accent.copy(alpha = if (selected) 1f else 0.7f), RectangleShape)
+            .background(
+                if (selected) c.accent.copy(alpha = 0.25f) else c.bg2,
+                RectangleShape,
+            )
+            .padding(horizontal = 7.dp, vertical = 2.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            label,
+            color = if (selected) c.accent else c.text,
+            style = RdType.mono.copy(fontSize = 11.sp, fontWeight = FontWeight.Bold),
+        )
     }
 }
 

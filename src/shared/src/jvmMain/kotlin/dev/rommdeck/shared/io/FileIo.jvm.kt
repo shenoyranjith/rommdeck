@@ -4,9 +4,13 @@ import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.jvm.javaio.toInputStream
 import java.io.File
 import java.net.InetAddress
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.FileSystemException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
+import kotlin.coroutines.coroutineContext
+import kotlinx.coroutines.ensureActive
 import java.security.MessageDigest
 import java.time.Instant
 import java.time.ZoneOffset
@@ -86,14 +90,34 @@ actual suspend fun writeFileFromChannel(
                 while (true) {
                     val read = input.read(buffer)
                     if (read <= 0) break
+                    coroutineContext.ensureActive()
                     out.write(buffer, 0, read)
                     total += read
                     onProgress(total)
                 }
             }
         }
-        Files.move(part.toPath(), dest.toPath(), StandardCopyOption.REPLACE_EXISTING)
+        finalizePartFile(part, dest)
     } finally {
         channel.cancel(null)
     }
+}
+
+private fun finalizePartFile(part: File, dest: File) {
+    try {
+        Files.move(part.toPath(), dest.toPath(), StandardCopyOption.REPLACE_EXISTING)
+    } catch (_: AtomicMoveNotSupportedException) {
+        copyPartToDest(part, dest)
+    } catch (e: FileSystemException) {
+        if (e.message?.contains("cross-device", ignoreCase = true) == true) {
+            copyPartToDest(part, dest)
+        } else {
+            throw e
+        }
+    }
+}
+
+private fun copyPartToDest(part: File, dest: File) {
+    Files.copy(part.toPath(), dest.toPath(), StandardCopyOption.REPLACE_EXISTING)
+    Files.deleteIfExists(part.toPath())
 }

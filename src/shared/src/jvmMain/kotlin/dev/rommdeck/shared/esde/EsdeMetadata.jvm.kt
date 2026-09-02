@@ -1,6 +1,8 @@
 package dev.rommdeck.shared.esde
 
 import kotlinx.coroutines.runBlocking
+import kotlin.coroutines.coroutineContext
+import kotlinx.coroutines.ensureActive
 import dev.rommdeck.shared.log.log
 import dev.rommdeck.shared.platform.rommSlugToEsdeFolder
 import dev.rommdeck.shared.romm.RommClient
@@ -59,7 +61,9 @@ suspend fun syncEsdeMetadata(
         ),
     )
 
+    coroutineContext.ensureActive()
     val rom = cachedRom?.takeIf { it.id == romId } ?: client.getRom(romId)
+    coroutineContext.ensureActive()
     val media = downloadRomMedia(
         client = client,
         mediaRoot = layout.mediaRoot,
@@ -68,6 +72,7 @@ suspend fun syncEsdeMetadata(
         rom = rom,
         baseUrl = baseUrl,
     )
+    coroutineContext.ensureActive()
     val entry = buildGamelistEntry(rom, primaryFilename)
     GamelistWriteQueue.run(gamelistPath) {
         upsertGamelistGameToDisk(gamelistPath, entry)

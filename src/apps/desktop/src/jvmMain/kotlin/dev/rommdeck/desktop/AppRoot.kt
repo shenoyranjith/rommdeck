@@ -234,6 +234,7 @@ fun AppRoot(
                 Row(Modifier.fillMaxSize()) {
                     SidebarColumn(
                         selected = tab,
+                        queue = queue,
                         onSelect = { tab = it },
                     )
                     Column(
@@ -330,8 +331,13 @@ fun AppRoot(
 }
 
 @Composable
-private fun SidebarColumn(selected: NavTab, onSelect: (NavTab) -> Unit) {
+private fun SidebarColumn(
+    selected: NavTab,
+    queue: SessionDownloadQueue,
+    onSelect: (NavTab) -> Unit,
+) {
     val c = Rd
+    val activeDownloads = queue.activeCount
     Column(
         Modifier
             .width(232.dp)
@@ -359,6 +365,7 @@ private fun SidebarColumn(selected: NavTab, onSelect: (NavTab) -> Unit) {
                     selected = item == selected,
                     label = item.label,
                     onClick = { onSelect(item) },
+                    badgeCount = if (item == NavTab.DOWNLOADS) activeDownloads else null,
                     leading = {
                         Icon(
                             item.icon,

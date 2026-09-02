@@ -1,6 +1,8 @@
 package dev.rommdeck.shared.esde
 
 import dev.rommdeck.shared.log.log
+import kotlin.coroutines.coroutineContext
+import kotlinx.coroutines.ensureActive
 import dev.rommdeck.shared.romm.RommClient
 import dev.rommdeck.shared.romm.RommRom
 import dev.rommdeck.shared.romm.assetUrlFor
@@ -66,6 +68,7 @@ suspend fun downloadRomMedia(
     val stem = mediaStem(romFilename)
     val saved = mutableListOf<DownloadedMedia>()
 
+    coroutineContext.ensureActive()
     val coverUrl = coverUrlFor(baseUrl, rom, preferLarge = true)
     if (coverUrl != null) {
         val dir = mediaTypeDir(mediaRoot, esdeFolder, "covers")
@@ -80,6 +83,7 @@ suspend fun downloadRomMedia(
         }?.let { saved += it }
     }
 
+    coroutineContext.ensureActive()
     val screenshotPath = rom.mergedScreenshots?.firstOrNull()
     val screenshotUrl = assetUrlFor(baseUrl, screenshotPath)
     if (screenshotUrl != null) {
@@ -94,6 +98,7 @@ suspend fun downloadRomMedia(
         }?.let { saved += it }
     }
 
+    coroutineContext.ensureActive()
     val videoUrl = assetUrlFor(baseUrl, rom.pathVideo)
     if (videoUrl != null) {
         val dir = mediaTypeDir(mediaRoot, esdeFolder, "videos")

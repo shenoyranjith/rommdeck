@@ -140,15 +140,11 @@ fun DownloadsScreen(
                                 DownloadSectionHeader("Active", c.accent)
                             }
                             items(activeJobs, key = { "active-${it.rom.id}" }) { job ->
-                                DownloadJobRow(
+                                DownloadActiveJobRow(
                                     job = job,
                                     rommBaseUrl = rommBaseUrl,
                                     apiToken = apiToken,
                                     onCancel = { queue.cancelRom(job.rom.id) },
-                                    onRetry = {
-                                        if (queue.retryRom(job.rom.id)) onStartPump()
-                                    },
-                                    onRemove = { queue.removeFailedRom(job.rom.id) },
                                 )
                             }
                         }
@@ -157,11 +153,10 @@ fun DownloadsScreen(
                                 DownloadSectionHeader("Failed", c.danger)
                             }
                             items(failedJobs, key = { "failed-${it.rom.id}" }) { job ->
-                                DownloadJobRow(
+                                DownloadFailedJobRow(
                                     job = job,
                                     rommBaseUrl = rommBaseUrl,
                                     apiToken = apiToken,
-                                    onCancel = { queue.cancelRom(job.rom.id) },
                                     onRetry = {
                                         if (queue.retryRom(job.rom.id)) onStartPump()
                                     },
@@ -199,24 +194,72 @@ private fun DownloadSectionHeader(label: String, color: androidx.compose.ui.grap
 }
 
 @Composable
-private fun DownloadJobRow(
+private fun DownloadStatusBadge(status: DownloadJobStatus) {
+    val c = Rd
+    val label: String
+    val tone: BadgeTone
+    val icon: RdIconKind
+    when (status) {
+        DownloadJobStatus.QUEUED -> {
+            label = "Queued"
+            tone = BadgeTone.WARN
+            icon = RdIconKind.CLOCK
+        }
+        DownloadJobStatus.RUNNING -> {
+            label = "Downloading"
+            tone = BadgeTone.ACCENT
+            icon = RdIconKind.DOWNLOADS
+        }
+        DownloadJobStatus.METADATA -> {
+            label = "Metadata"
+            tone = BadgeTone.ACCENT
+            icon = RdIconKind.DATABASE
+        }
+        DownloadJobStatus.FAILED -> {
+            label = "Failed"
+            tone = BadgeTone.ERR
+            icon = RdIconKind.WARN
+        }
+        DownloadJobStatus.DONE -> {
+            label = "Done"
+            tone = BadgeTone.OK
+            icon = RdIconKind.CHECK
+        }
+    }
+    val color = when (tone) {
+        BadgeTone.OK -> c.ok
+        BadgeTone.WARN -> c.warn
+        BadgeTone.ERR -> c.danger
+        BadgeTone.ACCENT -> c.accent
+        BadgeTone.MUTED -> c.muted
+    }
+    Row(
+        Modifier
+            .border(1.dp, color.copy(alpha = 0.5f), RectangleShape)
+            .background(c.bg2, RectangleShape)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        RdIcon(icon, color, 14.dp)
+        Text(
+            label.uppercase(),
+            color = color,
+            style = RdType.mono.copy(fontSize = 10.sp, fontWeight = FontWeight.SemiBold),
+        )
+    }
+}
+
+@Composable
+private fun DownloadActiveJobRow(
     job: DownloadJob,
     rommBaseUrl: String,
     apiToken: String,
     onCancel: () -> Unit,
-    onRetry: () -> Unit,
-    onRemove: () -> Unit,
 ) {
     val c = Rd
     val coverUrl = coverUrlFor(rommBaseUrl, job.rom)
     val platformLabel = job.rom.platformSlug ?: job.rom.platformName ?: "—"
-    val tone = when (job.status) {
-        DownloadJobStatus.QUEUED -> BadgeTone.WARN
-        DownloadJobStatus.RUNNING -> BadgeTone.ACCENT
-        DownloadJobStatus.METADATA -> BadgeTone.ACCENT
-        DownloadJobStatus.DONE -> BadgeTone.OK
-        DownloadJobStatus.FAILED -> BadgeTone.ERR
-    }
     val fraction = when (job.status) {
         DownloadJobStatus.METADATA -> 1f
         DownloadJobStatus.RUNNING -> {
@@ -238,21 +281,11 @@ private fun DownloadJobRow(
         DownloadJobStatus.QUEUED -> job.totalBytes?.let { formatBytes(it) }
         else -> null
     }
-    val canCancel = job.status == DownloadJobStatus.QUEUED ||
-        job.status == DownloadJobStatus.RUNNING ||
-        job.status == DownloadJobStatus.METADATA
-    val canRetry = job.status == DownloadJobStatus.FAILED
-
-    val isFailed = job.status == DownloadJobStatus.FAILED
 
     Row(
         Modifier
             .fillMaxWidth()
-            .border(
-                1.dp,
-                if (isFailed) c.danger.copy(alpha = 0.4f) else c.accent.copy(alpha = 0.4f),
-                RectangleShape,
-            )
+            .border(1.dp, c.accent.copy(alpha = 0.4f), RectangleShape)
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -260,28 +293,17 @@ private fun DownloadJobRow(
         Box(
             Modifier
                 .size(48.dp)
-                .border(
-                    1.dp,
-                    if (job.status == DownloadJobStatus.FAILED) c.danger.copy(alpha = 0.4f)
-                    else c.accent.copy(alpha = 0.7f),
-                    RectangleShape,
-                )
+                .border(1.dp, c.accent.copy(alpha = 0.7f), RectangleShape)
                 .background(c.bg0),
             contentAlignment = Alignment.Center,
         ) {
             RommAssetImage(
                 url = coverUrl,
                 apiToken = apiToken,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .then(if (job.status == DownloadJobStatus.FAILED) Modifier.alpha(0.8f) else Modifier),
+                modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
             ) {
-                RdIcon(
-                    if (job.status == DownloadJobStatus.FAILED) RdIconKind.WARN else RdIconKind.DOWNLOADS,
-                    if (job.status == DownloadJobStatus.FAILED) c.danger.copy(alpha = 0.7f) else c.accent.copy(alpha = 0.7f),
-                    16.dp,
-                )
+                RdIcon(RdIconKind.DOWNLOADS, c.accent.copy(alpha = 0.7f), 16.dp)
             }
         }
         Column(Modifier.weight(1f)) {
@@ -299,41 +321,95 @@ private fun DownloadJobRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (job.status != DownloadJobStatus.FAILED) {
-                RdProgress(
-                    fraction,
-                    pulse = job.status == DownloadJobStatus.METADATA ||
-                        (job.status == DownloadJobStatus.RUNNING && fraction <= 0f),
+            RdProgress(
+                fraction,
+                pulse = job.status == DownloadJobStatus.METADATA ||
+                    (job.status == DownloadJobStatus.RUNNING && fraction <= 0f),
+            )
+            if (progressLabel != null) {
+                Text(
+                    progressLabel,
+                    color = c.muted,
+                    style = RdType.mono.copy(fontSize = 11.sp),
+                    modifier = Modifier.padding(top = 4.dp),
                 )
-                if (progressLabel != null) {
-                    Text(
-                        progressLabel,
-                        color = c.muted,
-                        style = RdType.mono.copy(fontSize = 11.sp),
-                        modifier = Modifier.padding(top = 4.dp),
-                    )
-                }
             }
+        }
+        DownloadStatusBadge(job.status)
+        RdButton(onClick = onCancel, compact = true) {
+            Text("Cancel", style = RdType.small)
+        }
+    }
+}
+
+@Composable
+private fun DownloadFailedJobRow(
+    job: DownloadJob,
+    rommBaseUrl: String,
+    apiToken: String,
+    onRetry: () -> Unit,
+    onRemove: () -> Unit,
+) {
+    val c = Rd
+    val coverUrl = coverUrlFor(rommBaseUrl, job.rom)
+    val platformLabel = job.rom.platformSlug ?: job.rom.platformName ?: "—"
+
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .border(1.dp, c.danger.copy(alpha = 0.4f), RectangleShape)
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Box(
+            Modifier
+                .size(48.dp)
+                .border(1.dp, c.danger.copy(alpha = 0.4f), RectangleShape)
+                .background(c.bg0),
+            contentAlignment = Alignment.Center,
+        ) {
+            RommAssetImage(
+                url = coverUrl,
+                apiToken = apiToken,
+                modifier = Modifier.fillMaxSize().alpha(0.8f),
+                contentScale = ContentScale.Crop,
+            ) {
+                RdIcon(RdIconKind.WARN, c.danger.copy(alpha = 0.7f), 16.dp)
+            }
+        }
+        Column(Modifier.weight(1f)) {
+            Text(
+                job.rom.name,
+                color = c.text,
+                style = RdType.body.copy(fontWeight = FontWeight.Medium),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                platformLabel,
+                color = c.accent,
+                style = RdType.mono.copy(fontSize = 12.sp),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
             if (job.error != null) {
-                Text(job.error, color = c.danger, style = RdType.small, modifier = Modifier.padding(top = 4.dp))
+                Text(
+                    job.error,
+                    color = c.danger,
+                    style = RdType.small,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
             }
         }
-        RdBadge(
-            if (isFailed) "Failed" else job.status.name.lowercase().replaceFirstChar { it.titlecase() },
-            tone,
-        )
-        if (canRetry) {
-            RdButton(onClick = onRetry, primary = true, compact = true) {
-                Text("Retry", style = RdType.small)
-            }
-            RdButton(onClick = onRemove, compact = true) {
-                Text("Remove", style = RdType.small)
-            }
+        DownloadStatusBadge(DownloadJobStatus.FAILED)
+        RdButton(onClick = onRetry, primary = true, compact = true) {
+            Text("Retry", style = RdType.small)
         }
-        if (canCancel) {
-            RdButton(onClick = onCancel, compact = true) {
-                Text("Cancel", style = RdType.small)
-            }
+        RdButton(onClick = onRemove, compact = true) {
+            Text("Remove", style = RdType.small)
         }
     }
 }
