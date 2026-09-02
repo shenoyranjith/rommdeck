@@ -202,6 +202,9 @@ fun RdField(
     placeholder: String = "",
     enabled: Boolean = true,
     singleLine: Boolean = true,
+    textStyle: TextStyle? = null,
+    visualTransformation: androidx.compose.ui.text.input.VisualTransformation =
+        androidx.compose.ui.text.input.VisualTransformation.None,
     trailing: @Composable (() -> Unit)? = null,
     leading: @Composable (() -> Unit)? = null,
 ) {
@@ -212,37 +215,84 @@ fun RdField(
         }
         val interaction = remember { MutableInteractionSource() }
         val focused by interaction.collectIsFocusedAsState()
-        BasicTextField(
-            value = value,
-            onValueChange = onValueChange,
-            enabled = enabled,
-            singleLine = singleLine,
-            interactionSource = interaction,
-            cursorBrush = SolidColor(c.accent),
-            textStyle = RdType.field.copy(color = c.text),
-            modifier = Modifier.fillMaxWidth(),
-            decorationBox = { inner ->
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .height(RdControlHeight)
-                        .border(1.dp, if (focused) c.accent else c.line, RectangleShape)
-                        .background(c.bg0, RectangleShape)
-                        .padding(horizontal = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    if (leading != null) {
-                        leading()
-                        Spacer(Modifier.width(8.dp))
-                    }
-                    Box(Modifier.weight(1f)) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .height(RdControlHeight)
+                .border(1.dp, if (focused) c.accent else c.line, RectangleShape)
+                .background(c.bg0, RectangleShape),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (leading != null) {
+                Spacer(Modifier.width(12.dp))
+                leading()
+                Spacer(Modifier.width(8.dp))
+            }
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                enabled = enabled,
+                singleLine = singleLine,
+                interactionSource = interaction,
+                cursorBrush = SolidColor(c.accent),
+                textStyle = textStyle ?: RdType.field.copy(color = c.text),
+                visualTransformation = visualTransformation,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .padding(
+                        start = if (leading == null) 12.dp else 0.dp,
+                        end = if (trailing == null) 12.dp else 0.dp,
+                    ),
+                decorationBox = { inner ->
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.CenterStart) {
                         if (value.isEmpty() && placeholder.isNotEmpty()) {
                             Text(placeholder, color = c.muted.copy(alpha = 0.8f), style = RdType.field)
                         }
                         inner()
                     }
-                    if (trailing != null) trailing()
-                }
+                },
+            )
+            if (trailing != null) trailing()
+        }
+    }
+}
+
+@Composable
+fun RdFieldSideAction(
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    contentDescription: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+) {
+    val c = Rd
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
+    Box(
+        Modifier
+            .width(40.dp)
+            .height(RdControlHeight)
+            .drawBehind {
+                drawLine(
+                    color = c.line,
+                    start = Offset.Zero,
+                    end = Offset(0f, size.height),
+                    strokeWidth = 1.dp.toPx(),
+                )
+            }
+            .hoverable(interaction, enabled)
+            .clickable(interaction, null, enabled, onClick = onClick)
+            .then(if (enabled) Modifier.pointerHoverIcon(PointerIcon.Hand) else Modifier),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            icon,
+            contentDescription = contentDescription,
+            modifier = Modifier.size(16.dp),
+            tint = when {
+                !enabled -> c.muted.copy(alpha = 0.4f)
+                hovered -> c.text
+                else -> c.muted
             },
         )
     }

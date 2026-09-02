@@ -10,7 +10,7 @@ enum class NavTab(val label: String) {
 enum class SettingsSection(val label: String) {
     APPEARANCE("Appearance"),
     ROMM("RomM"),
-    PLAY("Play target"),
+    PLAY("Target"),
     AUTO_SYNC("Auto-sync"),
     LOGGING("Logging"),
 }

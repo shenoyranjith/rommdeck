@@ -1,5 +1,6 @@
 package dev.rommdeck.desktop
 
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.ScrollbarStyle
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
@@ -44,6 +45,20 @@ private fun RdScrollbarTrack(
             .background(c.bg1.copy(alpha = 0.8f)),
     ) {
         content()
+    }
+}
+
+@Composable
+fun RdVerticalScrollbar(
+    state: ScrollState,
+    modifier: Modifier = Modifier,
+) {
+    RdScrollbarTrack(modifier) {
+        VerticalScrollbar(
+            modifier = Modifier.fillMaxHeight(),
+            adapter = rememberScrollbarAdapter(scrollState = state),
+            style = rdScrollbarStyle(),
+        )
     }
 }
 
