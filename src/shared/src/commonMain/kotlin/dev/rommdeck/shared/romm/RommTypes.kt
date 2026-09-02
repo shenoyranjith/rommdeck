@@ -49,6 +49,8 @@ data class RommRom(
     @SerialName("path_cover_small") val pathCoverSmall: String? = null,
     @SerialName("path_cover_large") val pathCoverLarge: String? = null,
     @SerialName("url_cover") val urlCover: String? = null,
+    @SerialName("path_video") val pathVideo: String? = null,
+    @SerialName("merged_screenshots") val mergedScreenshots: List<String>? = null,
     val files: List<RommRomFile>? = null,
     val metadatum: RommMetadatum? = null,
     @SerialName("igdb_metadata") val igdbMetadata: RommMetadatum? = null,

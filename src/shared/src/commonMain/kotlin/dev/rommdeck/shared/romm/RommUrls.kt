@@ -67,6 +67,9 @@ fun resolveRommAssetUrl(baseUrl: String, assetPath: String?): String? {
     }
 }
 
+fun assetUrlFor(baseUrl: String, assetPath: String?): String? =
+    resolveRommAssetUrl(baseUrl, assetPath)
+
 fun coverUrlFor(baseUrl: String, rom: RommRom, preferLarge: Boolean = false): String? {
     if (preferLarge) {
         return resolveRommAssetUrl(baseUrl, rom.pathCoverLarge)

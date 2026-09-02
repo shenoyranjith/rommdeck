@@ -26,3 +26,6 @@ fun resolveEsdeLayout(esdeHomePath: String, downloadedMediaPath: String = ""): E
 
 fun gamelistFilePath(gamelistsRoot: String, esdeFolder: String): String =
     joinPath(gamelistsRoot, esdeFolder, "gamelist.xml")
+
+fun mediaTypeDir(mediaRoot: String, esdeFolder: String, mediaType: String): String =
+    joinPath(mediaRoot, esdeFolder, mediaType)

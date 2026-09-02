@@ -2,10 +2,8 @@ package dev.rommdeck.shared.download
 
 import dev.rommdeck.shared.db.IndexedRomFile
 import dev.rommdeck.shared.db.LibraryIndex
-import dev.rommdeck.shared.esde.buildGamelistEntry
-import dev.rommdeck.shared.esde.gamelistFilePath
-import dev.rommdeck.shared.esde.resolveEsdeLayout
-import dev.rommdeck.shared.esde.upsertGamelistGame
+import dev.rommdeck.shared.esde.removeEsdeMetadata
+import dev.rommdeck.shared.esde.syncEsdeMetadata
 import dev.rommdeck.shared.log.log
 import dev.rommdeck.shared.platform.downloadTargetPath
 import dev.rommdeck.shared.platform.rommSlugToEsdeFolder
@@ -36,7 +34,7 @@ class DownloadManager(
         onProgress: (bytesWritten: Long) -> Unit = {},
     ) {
         downloadRomFiles(rom, onProgress)
-        syncRomMetadata(rom)
+        syncRomMetadata(rom, client, client.baseUrl)
     }
 
     suspend fun downloadRomFiles(
@@ -100,19 +98,28 @@ class DownloadManager(
         log.info("download", "files complete", mapOf("romId" to rom.id))
     }
 
-    suspend fun syncRomMetadata(rom: RommRom) {
+    suspend fun syncRomMetadata(
+        rom: RommRom,
+        client: RommClient,
+        baseUrl: String,
+    ) {
         if (!config.syncMetadataOnDownload || config.esdeHomePath.isBlank()) return
 
         val slug = rom.platformSlug ?: return
         val filenames = rom.contentFilenames()
         if (filenames.isEmpty()) return
 
-        val esdeFolder = rommSlugToEsdeFolder(slug, config.platformMapOverrides)
-        val layout = resolveEsdeLayout(config.esdeHomePath, config.downloadedMediaPath)
-        val gamelistPath = gamelistFilePath(layout.gamelistsRoot, esdeFolder)
-        val entry = buildGamelistEntry(rom, filenames.first())
-        upsertGamelistGame(gamelistPath, entry)
-        log.info("esde", "gamelist upserted", mapOf("path" to gamelistPath, "rom" to rom.name))
+        syncEsdeMetadata(
+            client = client,
+            romId = rom.id,
+            rommSlug = slug,
+            primaryFilename = filenames.first(),
+            esdeHomePath = config.esdeHomePath,
+            downloadedMediaPath = config.downloadedMediaPath,
+            platformMapOverrides = config.platformMapOverrides,
+            baseUrl = baseUrl,
+            cachedRom = rom,
+        )
     }
 }
 
@@ -144,17 +151,29 @@ private fun rollbackWrittenFiles(paths: List<String>) {
     }
 }
 
+data class DeleteEsdeOptions(
+    val esdeHomePath: String,
+    val downloadedMediaPath: String = "",
+)
+
 data class DeleteLocalResult(
     val filesRemoved: Int,
     val filesMissing: Int,
     val filesFailed: List<String>,
+    val esdeCleaned: Int = 0,
 ) {
     val fullyRemoved: Boolean get() = filesFailed.isEmpty()
 }
 
-fun deleteLocalRom(index: LibraryIndex, romId: Int): DeleteLocalResult {
+fun deleteLocalRom(
+    index: LibraryIndex,
+    romId: Int,
+    esde: DeleteEsdeOptions? = null,
+): DeleteLocalResult {
     val rows = index.getByRomId(romId)
-    if (rows.isEmpty()) return DeleteLocalResult(filesRemoved = 0, filesMissing = 0, filesFailed = emptyList())
+    if (rows.isEmpty()) {
+        return DeleteLocalResult(filesRemoved = 0, filesMissing = 0, filesFailed = emptyList())
+    }
 
     var removed = 0
     var missing = 0
@@ -180,6 +199,26 @@ fun deleteLocalRom(index: LibraryIndex, romId: Int): DeleteLocalResult {
 
     touchedDirs.forEach(::notifyDirectoryChanged)
 
+    var esdeCleaned = 0
+    if (esde != null && esde.esdeHomePath.isNotBlank() && failed.isEmpty()) {
+        val byFolder = linkedMapOf<String, String>()
+        for (row in rows) {
+            if (row.esdeFolder !in byFolder) {
+                byFolder[row.esdeFolder] = row.filename
+            }
+        }
+        for ((esdeFolder, primaryFilename) in byFolder) {
+            val result = removeEsdeMetadata(
+                esdeHomePath = esde.esdeHomePath,
+                downloadedMediaPath = esde.downloadedMediaPath,
+                esdeFolder = esdeFolder,
+                primaryFilename = primaryFilename,
+            )
+            if (result.gamelistRemoved) esdeCleaned++
+            esdeCleaned += result.mediaRemoved.size
+        }
+    }
+
     log.info(
         "download",
         "deleted local",
@@ -188,9 +227,15 @@ fun deleteLocalRom(index: LibraryIndex, romId: Int): DeleteLocalResult {
             "removed" to removed,
             "missing" to missing,
             "failed" to failed.size,
+            "esdeCleaned" to esdeCleaned,
         ),
     )
-    return DeleteLocalResult(filesRemoved = removed, filesMissing = missing, filesFailed = failed)
+    return DeleteLocalResult(
+        filesRemoved = removed,
+        filesMissing = missing,
+        filesFailed = failed,
+        esdeCleaned = esdeCleaned,
+    )
 }
 
 private fun deletePathWithRetry(path: Path, attempts: Int = 5): Boolean {

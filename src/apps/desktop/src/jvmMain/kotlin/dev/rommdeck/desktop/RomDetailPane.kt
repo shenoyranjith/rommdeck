@@ -30,6 +30,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.rommdeck.shared.download.RomLocalFlags
 import dev.rommdeck.shared.romm.RommPlatform
 import dev.rommdeck.shared.romm.RommRom
 import dev.rommdeck.shared.romm.coverUrlFor
@@ -42,7 +43,11 @@ private fun RommRom.displaySizeBytes(): Long? {
     return fromFiles.takeIf { it > 0 }
 }
 
-private fun detailBadges(onDisk: Boolean, queueStatus: DownloadJobStatus?): List<DetailBadge> {
+private fun detailBadges(
+    onDisk: Boolean,
+    queueStatus: DownloadJobStatus?,
+    localFlags: RomLocalFlags?,
+): List<DetailBadge> {
     if (!onDisk) {
         return when (queueStatus) {
             DownloadJobStatus.QUEUED -> listOf(DetailBadge("Queued", BadgeTone.WARN))
@@ -50,13 +55,17 @@ private fun detailBadges(onDisk: Boolean, queueStatus: DownloadJobStatus?): List
             else -> listOf(DetailBadge("Missing", BadgeTone.WARN))
         }
     }
-    return when (queueStatus) {
-        DownloadJobStatus.METADATA -> listOf(
-            DetailBadge("Downloaded", BadgeTone.OK),
-            DetailBadge("Writing metadata", BadgeTone.ACCENT),
-        )
-        else -> listOf(DetailBadge("Downloaded", BadgeTone.OK))
+    val badges = mutableListOf(DetailBadge("Downloaded", BadgeTone.OK))
+    if (localFlags?.verified == false) {
+        badges += DetailBadge("Unverified", BadgeTone.WARN)
     }
+    when (queueStatus) {
+        DownloadJobStatus.METADATA -> badges += DetailBadge("Writing metadata", BadgeTone.ACCENT)
+        else -> if (localFlags?.metadataMissing == true) {
+            badges += DetailBadge("Missing metadata", BadgeTone.ERR)
+        }
+    }
+    return badges
 }
 
 fun SessionDownloadQueue.activeJobStatus(romId: Int): DownloadJobStatus? =
@@ -76,6 +85,7 @@ fun RomDetailPane(
     onDisk: Boolean,
     loading: Boolean,
     queueStatus: DownloadJobStatus?,
+    localFlags: RomLocalFlags?,
     canDownload: Boolean,
     rommBaseUrl: String,
     apiToken: String,
@@ -132,7 +142,7 @@ fun RomDetailPane(
                         ?: platform?.name
                         ?: detail.platformSlug
                         ?: "—"
-                    val badges = detailBadges(onDisk, queueStatus)
+                    val badges = detailBadges(onDisk, queueStatus, localFlags)
 
                     Box(
                         Modifier

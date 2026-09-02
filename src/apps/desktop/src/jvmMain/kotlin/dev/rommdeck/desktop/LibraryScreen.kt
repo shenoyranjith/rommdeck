@@ -51,7 +51,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.rommdeck.shared.config.RommDeckConfig
 import dev.rommdeck.shared.db.openLibraryIndex
+import dev.rommdeck.shared.download.DeleteEsdeOptions
 import dev.rommdeck.shared.download.deleteLocalRom
+import dev.rommdeck.shared.download.romLocalFlags
+import dev.rommdeck.shared.download.romStatusLabel
+import dev.rommdeck.shared.download.RomLocalFlags
 import dev.rommdeck.shared.play.ResolvedPlayPaths
 import dev.rommdeck.shared.romm.RommPlatform
 import dev.rommdeck.shared.romm.RommRom
@@ -204,6 +208,58 @@ fun LibraryScreen(
 
     fun romOnDisk(rom: RommRom): Boolean =
         filter == RomFilter.DOWNLOADED || rom.id in downloadedIds
+
+    fun deleteEsdeOptions(): DeleteEsdeOptions? =
+        if (paths.esdeHomePath.isNotBlank()) {
+            DeleteEsdeOptions(paths.esdeHomePath, paths.downloadedMediaPath)
+        } else {
+            null
+        }
+
+    var localFlagsById by remember { mutableStateOf<Map<Int, RomLocalFlags>>(emptyMap()) }
+
+    LaunchedEffect(
+        visibleRoms.map { it.id },
+        detailRom?.id,
+        downloadedIds,
+        queue.completionCount,
+        paths.esdeHomePath,
+        paths.downloadedMediaPath,
+        config.platformMapOverrides,
+        config.playTarget.syncMetadataOnDownload,
+    ) {
+        if (downloadedIds.isEmpty()) {
+            localFlagsById = emptyMap()
+            return@LaunchedEffect
+        }
+        val romsToScan = (visibleRoms + listOfNotNull(detailRom))
+            .distinctBy { it.id }
+            .filter { it.id in downloadedIds }
+        localFlagsById = withContext(Dispatchers.IO) {
+            val index = openLibraryIndex()
+            try {
+                romsToScan.associate { rom ->
+                    rom.id to romLocalFlags(
+                        rom = rom,
+                        index = index,
+                        esdeHomePath = paths.esdeHomePath,
+                        downloadedMediaPath = paths.downloadedMediaPath,
+                        platformMapOverrides = config.platformMapOverrides,
+                        syncMetadataOnDownload = config.playTarget.syncMetadataOnDownload,
+                    )
+                }
+            } finally {
+                index.close()
+            }
+        }
+    }
+
+    fun romFlags(rom: RommRom): RomLocalFlags =
+        if (!romOnDisk(rom)) {
+            RomLocalFlags(downloaded = false)
+        } else {
+            localFlagsById[rom.id] ?: RomLocalFlags(downloaded = true)
+        }
 
     fun handleRomDeleted(id: Int) {
         if (id !in downloadedIds) return
@@ -440,7 +496,7 @@ fun LibraryScreen(
             val result = withContext(Dispatchers.IO) {
                 val index = openLibraryIndex()
                 try {
-                    deleteLocalRom(index, rom.id)
+                    deleteLocalRom(index, rom.id, deleteEsdeOptions())
                 } finally {
                     index.close()
                 }
@@ -575,7 +631,7 @@ fun LibraryScreen(
                                     try {
                                         val failed = mutableListOf<String>()
                                         ids.forEach { romId ->
-                                            failed += deleteLocalRom(index, romId).filesFailed
+                                            failed += deleteLocalRom(index, romId, deleteEsdeOptions()).filesFailed
                                         }
                                         val cleared = ids.filter { index.getByRomId(it).isEmpty() }
                                         cleared to failed
@@ -903,6 +959,7 @@ fun LibraryScreen(
                                 rom = rom,
                                 rommBaseUrl = config.romm.baseUrl,
                                 apiToken = config.romm.apiToken,
+                                localFlags = romFlags(rom),
                                 onDisk = romOnDisk(rom),
                                 canDownload = canDownload,
                                 queue = queue,
@@ -936,6 +993,7 @@ fun LibraryScreen(
                                 rom = rom,
                                 rommBaseUrl = config.romm.baseUrl,
                                 apiToken = config.romm.apiToken,
+                                localFlags = romFlags(rom),
                                 onDisk = romOnDisk(rom),
                                 canDownload = canDownload,
                                 queue = queue,
@@ -964,6 +1022,7 @@ fun LibraryScreen(
                     detail = detailRom,
                     detailError = detailError,
                     platform = selected,
+                    localFlags = detailRom?.let { romFlags(it) },
                     onDisk = detailRom?.let { romOnDisk(it) } == true,
                     loading = detailRom == null && detailError == null,
                     queueStatus = focusedRomId?.let { queue.activeJobStatus(it) },
@@ -1015,6 +1074,7 @@ private fun RomListItem(
     rom: RommRom,
     rommBaseUrl: String,
     apiToken: String,
+    localFlags: RomLocalFlags,
     onDisk: Boolean,
     canDownload: Boolean,
     queue: SessionDownloadQueue,
@@ -1033,7 +1093,7 @@ private fun RomListItem(
         title = rom.name,
         subtitle = buildString {
             append(formatBytes(rom.fsSizeBytes))
-            if (onDisk) append(" · on disk")
+            if (onDisk) append(" · ${romStatusLabel(localFlags).lowercase()}")
         },
         coverUrl = coverUrl,
         apiToken = apiToken,
@@ -1065,6 +1125,7 @@ private fun RomGridCard(
     rom: RommRom,
     rommBaseUrl: String,
     apiToken: String,
+    localFlags: RomLocalFlags,
     onDisk: Boolean,
     canDownload: Boolean,
     queue: SessionDownloadQueue,
@@ -1081,8 +1142,12 @@ private fun RomGridCard(
     val c = Rd
     val scope = rememberCoroutineScope()
     val coverUrl = coverUrlFor(rommBaseUrl, rom, preferLarge = true)
-    val statusLabel = if (onDisk) "On disk" else "Missing"
-    val statusTone = if (onDisk) BadgeTone.OK else BadgeTone.WARN
+    val statusLabel = romStatusLabel(localFlags)
+    val statusTone = when {
+        !localFlags.downloaded -> BadgeTone.WARN
+        localFlags.verified == false -> BadgeTone.WARN
+        else -> BadgeTone.OK
+    }
 
     Column(
         Modifier

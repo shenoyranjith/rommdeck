@@ -368,7 +368,7 @@ class SessionDownloadQueue {
                             client = client,
                             index = library,
                             config = managerConfig(paths, config),
-                        ).syncRomMetadata(job.rom)
+                        ).syncRomMetadata(job.rom, client, config.romm.baseUrl)
                     } finally {
                         client.close()
                         library.close()

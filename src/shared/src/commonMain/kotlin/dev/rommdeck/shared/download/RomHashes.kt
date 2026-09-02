@@ -19,3 +19,12 @@ fun romHasExpectedHash(rom: RommRom, filename: String): Boolean {
     val expected = expectedHashesForFile(rom, filename)
     return !expected.sha1.isNullOrBlank() || !expected.md5.isNullOrBlank()
 }
+
+fun hashesMatchRom(rom: RommRom, filename: String, storedSha1: String?): Boolean {
+    val expected = expectedHashesForFile(rom, filename)
+    val wantSha1 = expected.sha1?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
+    if (wantSha1 != null) {
+        return storedSha1?.trim()?.lowercase() == wantSha1
+    }
+    return !storedSha1.isNullOrBlank()
+}

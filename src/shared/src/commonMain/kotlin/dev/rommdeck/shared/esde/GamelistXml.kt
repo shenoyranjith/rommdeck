@@ -54,6 +54,23 @@ fun upsertGamelistGames(existingXml: String, game: GamelistGame): String {
     return serializeGamelistXml(games)
 }
 
+fun removeGamelistGame(existingXml: String, romPath: String): String? {
+    val target = normalizeGamelistPath(gamelistPathForRom(romPath.removePrefix("./")))
+    val games = parseGamelistXml(existingXml)
+    val next = games.filter { normalizeGamelistPath(it.path) != target }
+    if (next.size == games.size) return null
+    return if (next.isEmpty()) {
+        "<?xml version=\"1.0\"?>\n<gameList>\n</gameList>\n"
+    } else {
+        serializeGamelistXml(next)
+    }
+}
+
+fun hasGamelistEntry(content: String, romFilename: String): Boolean {
+    val target = normalizeGamelistPath(gamelistPathForRom(romFilename))
+    return parseGamelistXml(content).any { normalizeGamelistPath(it.path) == target }
+}
+
 private fun serializeGame(game: GamelistGame): String {
     val tags = buildString {
         append(writeTag("path", game.path))
