@@ -49,6 +49,23 @@ actual fun controlAutoSyncService(action: AutoSyncAction): ServiceCommandResult 
     }
 }
 
+/** Restart the background sync daemon when config changes (no-op if not installed/running). */
+fun restartSyncDaemonIfActive() {
+    if (isSyncDaemonProcess()) return
+    if (!isAutoSyncServiceInstalled()) return
+    if (!controlAutoSyncService(AutoSyncAction.STATUS).ok) return
+    log.info("daemon", "restarting sync daemon after config change")
+    val result = controlAutoSyncService(AutoSyncAction.RESTART)
+    if (!result.ok) {
+        log.warn("daemon", "restart after config change failed", mapOf("output" to result.output))
+    }
+}
+
+private fun isSyncDaemonProcess(): Boolean {
+    val status = readDaemonStatus()
+    return status.running && status.pid == ProcessHandle.current().pid()
+}
+
 internal fun linuxUnitPath(): Path =
     Path.of(homeDir(), ".config", "systemd", "user", "$SERVICE_NAME.service")
 

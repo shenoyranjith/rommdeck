@@ -49,6 +49,7 @@ suspend fun runConfiguredSync(unattended: Boolean = true): SyncResult {
             deviceId = device.deviceId,
             paths = syncPaths,
             conflictPolicy = cfg.sync.conflictPolicy,
+            syncMode = cfg.sync.mode,
             unattended = unattended,
         ).copy(
             deviceRegistered = device.registered,

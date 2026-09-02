@@ -2,6 +2,7 @@ import os from "node:os";
 import type { RommClient } from "../romm/client.js";
 import type { RommDevice } from "../romm/types.js";
 import type { SyncMode } from "../config.js";
+import { toRommApiSyncMode } from "../config.js";
 import type { SyncPaths } from "./protocol.js";
 import { log } from "../log.js";
 
@@ -23,7 +24,7 @@ function registrationBody(reg: DeviceRegistration): Record<string, unknown> {
     name: reg.name,
     platform: reg.platform,
     hostname: reg.hostname,
-    sync_mode: reg.syncMode,
+    sync_mode: toRommApiSyncMode(reg.syncMode),
     sync_config: { paths },
     paths,
   };
@@ -59,7 +60,7 @@ function pathsMatch(
 
 function syncModeMatches(device: RommDevice, mode: SyncMode): boolean {
   if (!device.sync_mode) return true;
-  return device.sync_mode === mode;
+  return device.sync_mode === toRommApiSyncMode(mode);
 }
 
 export interface EnsureDeviceResult {
@@ -105,7 +106,7 @@ export async function ensureDevice(
       if (needsUpdate) {
         await client.updateDevice(opts.deviceId, {
           name: opts.deviceName,
-          sync_mode: opts.syncMode,
+          sync_mode: toRommApiSyncMode(opts.syncMode),
           sync_config: body.sync_config as { paths: Record<string, string> },
         });
         log.sync("device updated", { deviceId: opts.deviceId, name: opts.deviceName });
@@ -123,7 +124,7 @@ export async function ensureDevice(
     name: reg.name,
     platform: reg.platform,
     hostname: reg.hostname,
-    sync_mode: reg.syncMode,
+    sync_mode: toRommApiSyncMode(reg.syncMode),
     sync_config: body.sync_config as { paths: Record<string, string> },
     paths: body.paths as Record<string, string>,
     allow_duplicate: opts.registerNew ?? false,

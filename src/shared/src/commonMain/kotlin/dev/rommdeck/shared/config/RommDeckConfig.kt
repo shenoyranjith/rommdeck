@@ -34,6 +34,12 @@ enum class UiTheme {
 }
 
 @Serializable
+enum class LibraryViewMode {
+    @SerialName("grid") GRID,
+    @SerialName("list") LIST,
+}
+
+@Serializable
 data class RommConfig(
     val baseUrl: String = "",
     val apiToken: String = "",
@@ -68,6 +74,7 @@ data class UiConfig(
     val theme: UiTheme = UiTheme.CANDY,
     val scanlines: Boolean = true,
     val scanlineStrength: Int = 12,
+    val libraryViewMode: LibraryViewMode = LibraryViewMode.GRID,
 )
 
 @Serializable
@@ -88,5 +95,7 @@ data class RommDeckConfig(
 val DEFAULT_CONFIG = RommDeckConfig()
 
 val UI_THEMES = listOf(UiTheme.CANDY, UiTheme.GOLD, UiTheme.VECTOR, UiTheme.MINT)
+
+val LIBRARY_VIEW_MODES = listOf(LibraryViewMode.GRID, LibraryViewMode.LIST)
 
 val LOG_LEVELS = listOf(LogLevel.DEBUG, LogLevel.INFO, LogLevel.WARN, LogLevel.ERROR)

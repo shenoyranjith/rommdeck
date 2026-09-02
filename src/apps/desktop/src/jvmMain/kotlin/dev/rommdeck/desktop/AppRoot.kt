@@ -283,6 +283,7 @@ fun AppRoot(
                                             },
                                             onNotice = onNotice,
                                             onStatsChanged = { stats = loadLibraryStats() },
+                                            onConfigChange = { config = it },
                                         )
                                         NavTab.DOWNLOADS -> DownloadsScreen(
                                             queue = queue,

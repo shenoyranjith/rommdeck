@@ -1,6 +1,7 @@
 package dev.rommdeck.shared.romm
 
 import dev.rommdeck.shared.config.RommConfig
+import dev.rommdeck.shared.config.normalizeRommApiSyncMode
 import dev.rommdeck.shared.io.readFileBytes
 import dev.rommdeck.shared.log.log
 import io.ktor.client.HttpClient
@@ -131,7 +132,7 @@ class RommClient private constructor(
     ): RommDevice {
         val body = buildJsonObject {
             put("name", name)
-            put("sync_mode", syncMode)
+            put("sync_mode", normalizeRommApiSyncMode(syncMode))
             put("sync_config", buildJsonObject {
                 put("paths", rommJson.encodeToJsonElement(paths))
             })
@@ -152,7 +153,7 @@ class RommClient private constructor(
             put("name", name)
             put("platform", platform)
             put("hostname", hostname)
-            put("sync_mode", syncMode)
+            put("sync_mode", normalizeRommApiSyncMode(syncMode))
             put("sync_config", buildJsonObject {
                 put("paths", rommJson.encodeToJsonElement(paths))
             })

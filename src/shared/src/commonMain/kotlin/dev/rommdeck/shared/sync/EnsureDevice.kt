@@ -1,6 +1,7 @@
 package dev.rommdeck.shared.sync
 
 import dev.rommdeck.shared.config.SyncMode
+import dev.rommdeck.shared.config.toRommApiSyncMode
 import dev.rommdeck.shared.io.hostName
 import dev.rommdeck.shared.log.log
 import dev.rommdeck.shared.romm.RommApiError
@@ -33,11 +34,7 @@ suspend fun ensureDevice(
         "saves" to paths.savesPath,
         "states" to paths.statesPath,
     )
-    val mode = when (syncMode) {
-        SyncMode.PUSH_PULL -> "push_pull"
-        SyncMode.PULL_ONLY -> "pull_only"
-        SyncMode.PUSH_ONLY -> "push_only"
-    }
+    val mode = syncMode.toRommApiSyncMode()
     val baseHost = hostName()
     val hostname = if (registerNew) "$baseHost-${slugify(deviceName)}" else baseHost
 
@@ -46,7 +43,7 @@ suspend fun ensureDevice(
             val existing = client.getDevice(deviceId)
             val needsUpdate =
                 !pathsMatch(existing, paths) ||
-                    !syncModeMatches(existing, mode) ||
+                    !syncModeMatches(existing, syncMode) ||
                     (deviceName.isNotBlank() && existing.name != deviceName)
             if (needsUpdate) {
                 client.updateDevice(deviceId, deviceName, mode, pathMap)
@@ -89,9 +86,16 @@ private fun pathsMatch(device: RommDevice, desired: SyncPaths): Boolean {
         current.third == desired.statesPath
 }
 
-private fun syncModeMatches(device: RommDevice, mode: String): Boolean {
+private fun syncModeMatches(device: RommDevice, mode: SyncMode): Boolean {
     val current = device.syncMode ?: return true
-    return current == mode
+    val expected = mode.toRommApiSyncMode()
+    if (current == expected) return true
+    // Older RommDeck stored directional modes on the device; RomM no longer accepts them on write.
+    return when (mode) {
+        SyncMode.PULL_ONLY -> current == "pull_only"
+        SyncMode.PUSH_ONLY -> current == "push_only"
+        SyncMode.PUSH_PULL -> false
+    }
 }
 
 private fun slugify(name: String): String {

@@ -1,6 +1,10 @@
 package dev.rommdeck.shared.sync
 
 import dev.rommdeck.shared.config.ConflictPolicy
+import dev.rommdeck.shared.config.SyncMode
+import dev.rommdeck.shared.config.allowsDownload
+import dev.rommdeck.shared.config.allowsSyncOp
+import dev.rommdeck.shared.config.allowsUpload
 import dev.rommdeck.shared.db.LibraryIndex
 import dev.rommdeck.shared.io.fileExists
 import dev.rommdeck.shared.io.fileMtimeIso
@@ -31,6 +35,7 @@ suspend fun runSyncSession(
     deviceId: String,
     paths: SyncPaths,
     conflictPolicy: ConflictPolicy,
+    syncMode: SyncMode = SyncMode.PUSH_PULL,
     unattended: Boolean,
 ): SyncResult {
     val payload = buildNegotiatePayload(index, paths)
@@ -52,19 +57,42 @@ suspend fun runSyncSession(
                     if (!unattended) {
                         conflicts += op
                     } else {
-                        applyConflictPolicy(client, index, paths, op, conflictPolicy, deviceId, negotiated.sessionId)
+                        applyConflictPolicy(
+                            client,
+                            index,
+                            paths,
+                            op,
+                            conflictPolicy,
+                            syncMode,
+                            deviceId,
+                            negotiated.sessionId,
+                        )
                         completed++
                     }
                 }
-                SyncOpAction.UPLOAD -> {
-                    val local = findLocalSaveFile(index, paths, op)
-                        ?: error("Local file not found for upload: ${op.file}")
-                    uploadOp(client, op, local, deviceId, negotiated.sessionId, overwrite = false)
-                    completed++
-                }
-                SyncOpAction.DOWNLOAD -> {
-                    downloadOp(client, index, paths, op, deviceId, negotiated.sessionId)
-                    completed++
+                SyncOpAction.UPLOAD, SyncOpAction.DOWNLOAD -> {
+                    if (!syncMode.allowsSyncOp(op.type)) {
+                        log.debug(
+                            "sync",
+                            "skip op (sync mode)",
+                            mapOf("type" to op.type.name.lowercase(), "file" to op.file, "mode" to syncMode.name),
+                        )
+                        completed++
+                        continue
+                    }
+                    when (op.type) {
+                        SyncOpAction.UPLOAD -> {
+                            val local = findLocalSaveFile(index, paths, op)
+                                ?: error("Local file not found for upload: ${op.file}")
+                            uploadOp(client, op, local, deviceId, negotiated.sessionId, overwrite = false)
+                            completed++
+                        }
+                        SyncOpAction.DOWNLOAD -> {
+                            downloadOp(client, index, paths, op, deviceId, negotiated.sessionId)
+                            completed++
+                        }
+                        else -> Unit
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -176,15 +204,18 @@ private suspend fun applyConflictPolicy(
     paths: SyncPaths,
     op: SyncOperation,
     policy: ConflictPolicy,
+    syncMode: SyncMode,
     deviceId: String,
     sessionId: String,
 ) {
     if (policy == ConflictPolicy.DEVICE_WINS || policy == ConflictPolicy.KEEP_BOTH) {
+        if (!syncMode.allowsUpload()) return
         val local = findLocalSaveFile(index, paths, op)
             ?: error("Local file not found for conflict upload: ${op.file}")
         uploadOp(client, op, local, deviceId, sessionId, overwrite = policy == ConflictPolicy.DEVICE_WINS)
     }
     if (policy == ConflictPolicy.SERVER_WINS) {
+        if (!syncMode.allowsDownload()) return
         downloadOp(client, index, paths, op, deviceId, sessionId)
     }
 }

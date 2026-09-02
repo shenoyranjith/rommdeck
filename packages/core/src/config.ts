@@ -4,6 +4,34 @@ import { getConfigDir, getConfigPath } from "./paths.js";
 
 export type ConflictPolicy = "keep_both" | "server_wins" | "device_wins";
 export type SyncMode = "push_pull" | "pull_only" | "push_only";
+
+/** RomM device registration accepts `api`, `file_transfer`, or `push_pull`. Direction is enforced locally. */
+export function toRommApiSyncMode(mode: SyncMode): string {
+  switch (mode) {
+    case "push_pull":
+      return "push_pull";
+    case "pull_only":
+    case "push_only":
+      return "api";
+  }
+}
+
+export function allowsSyncOp(
+  mode: SyncMode,
+  type: "upload" | "download" | "conflict" | "no_op",
+): boolean {
+  switch (type) {
+    case "upload":
+      return mode !== "pull_only";
+    case "download":
+      return mode !== "push_only";
+    case "conflict":
+    case "no_op":
+      return true;
+    default:
+      return true;
+  }
+}
 export type UiTheme = "candy" | "gold" | "vector" | "mint";
 
 export const UI_THEMES: readonly UiTheme[] = ["candy", "gold", "vector", "mint"] as const;

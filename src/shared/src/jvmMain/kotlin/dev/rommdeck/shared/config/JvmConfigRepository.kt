@@ -2,6 +2,7 @@ package dev.rommdeck.shared.config
 
 import dev.rommdeck.shared.log.configureLogging
 import dev.rommdeck.shared.paths.AppPaths
+import dev.rommdeck.shared.sync.restartSyncDaemonIfActive
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
@@ -37,6 +38,12 @@ actual class ConfigRepository {
 }
 
 actual fun createConfigRepository(): ConfigRepository = ConfigRepository()
+
+/** Persist RomM / auto-sync settings and restart syncd when it is running. */
+fun ConfigRepository.saveSyncDaemonConfig(config: RommDeckConfig) {
+    save(config)
+    restartSyncDaemonIfActive()
+}
 
 /** Shallow field merge for settings edits (non-empty strings win). */
 internal fun mergeConfigPatch(current: RommDeckConfig, patch: RommDeckConfig): RommDeckConfig =

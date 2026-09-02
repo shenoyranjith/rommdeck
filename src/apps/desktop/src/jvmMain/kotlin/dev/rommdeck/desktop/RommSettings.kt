@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.sp
 import dev.rommdeck.shared.config.RommConfig
 import dev.rommdeck.shared.config.RommDeckConfig
 import dev.rommdeck.shared.config.createConfigRepository
+import dev.rommdeck.shared.config.saveSyncDaemonConfig
 import dev.rommdeck.shared.romm.createRommClient
 import java.awt.Desktop
 import java.net.URI
@@ -72,7 +73,7 @@ fun RommSettings(
         saveJob?.cancel()
         saveJob = scope.launch {
             delay(RommSaveDebounceMs)
-            withContext(Dispatchers.IO) { repo.save(next) }
+            withContext(Dispatchers.IO) { repo.saveSyncDaemonConfig(next) }
         }
     }
 
@@ -113,7 +114,7 @@ fun RommSettings(
                 overrides = config.platformMapOverrides,
                 onSave = { overrides ->
                     val next = config.copy(platformMapOverrides = overrides)
-                    withContext(Dispatchers.IO) { repo.save(next) }
+                    withContext(Dispatchers.IO) { repo.saveSyncDaemonConfig(next) }
                     onConfigChange(next)
                     onNotice("Platform map saved", NotificationTone.Ok)
                     editingPlatformMap = false
@@ -196,7 +197,7 @@ fun RommSettings(
                             scope.launch {
                                 try {
                                     saveJob?.cancel()
-                                    withContext(Dispatchers.IO) { repo.save(config) }
+                                    withContext(Dispatchers.IO) { repo.saveSyncDaemonConfig(config) }
                                     connectionStatus = RommConnectionStatus.Checking
                                     val result = checkConnection()
                                     connectionStatus = result

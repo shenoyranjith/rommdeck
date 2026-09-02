@@ -17,6 +17,7 @@ class ConfigCodecTest {
         assertEquals("http://romm.local", cfg.romm.baseUrl)
         assertEquals(LogLevel.INFO, cfg.logging.level)
         assertEquals(SyncMode.PUSH_PULL, cfg.sync.mode)
+        assertEquals(LibraryViewMode.GRID, cfg.ui.libraryViewMode)
     }
 
     @Test
@@ -31,5 +32,12 @@ class ConfigCodecTest {
         assert(encoded.contains("\"retrodeck\""))
         val decoded = decodeConfig(encoded)
         assertEquals("http://test", decoded.romm.baseUrl)
+    }
+
+    @Test
+    fun roundTripKeepsLibraryViewMode() {
+        val cfg = DEFAULT_CONFIG.copy(ui = DEFAULT_CONFIG.ui.copy(libraryViewMode = LibraryViewMode.LIST))
+        val decoded = decodeConfig(encodeConfig(cfg))
+        assertEquals(LibraryViewMode.LIST, decoded.ui.libraryViewMode)
     }
 }

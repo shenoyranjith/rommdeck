@@ -1,7 +1,8 @@
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
 import type { RommClient } from "../romm/client.js";
-import type { ConflictPolicy } from "../config.js";
+import type { ConflictPolicy, SyncMode } from "../config.js";
+import { allowsSyncOp } from "../config.js";
 import type { ClientSaveState, SyncOperation } from "../romm/types.js";
 import { LibraryIndex } from "../db/index.js";
 import { md5File, fileMtimeIso } from "../hash.js";
@@ -202,10 +203,12 @@ export async function runSyncSession(
     deviceId: string | number;
     paths: SyncPaths;
     conflictPolicy: ConflictPolicy;
+    syncMode?: SyncMode;
     /** When true, apply conflict policy automatically; otherwise leave pending. */
     unattended: boolean;
   },
 ): Promise<SyncResult> {
+  const syncMode = opts.syncMode ?? "push_pull";
   const { saves, discovery } = await buildNegotiatePayload(index, opts.paths);
   log.sync("negotiate start", {
     deviceId: opts.deviceId,
@@ -252,11 +255,21 @@ export async function runSyncSession(
           opts.paths,
           op,
           opts.conflictPolicy,
+          syncMode,
           {
             deviceId: String(opts.deviceId),
             sessionId: negotiated.session_id,
           },
         );
+        result.completed++;
+        continue;
+      }
+      if (!allowsSyncOp(syncMode, op.type)) {
+        log.debug("sync", "skip op (sync mode)", {
+          type: op.type,
+          file: op.file,
+          mode: syncMode,
+        });
         result.completed++;
         continue;
       }
@@ -351,14 +364,17 @@ async function applyConflictPolicy(
   paths: SyncPaths,
   op: SyncOperation,
   policy: ConflictPolicy,
+  syncMode: SyncMode,
   ctx: { deviceId: string; sessionId: string | number | null | undefined },
 ): Promise<void> {
   if (policy === "device_wins" || policy === "keep_both") {
+    if (!allowsSyncOp(syncMode, "upload")) return;
     const local = findLocalSaveFile(index, paths, op);
     if (!local) throw new Error(`Local file not found for conflict upload: ${op.file}`);
     await uploadSyncSave(client, op, local, ctx, policy === "device_wins");
   }
   if (policy === "server_wins") {
+    if (!allowsSyncOp(syncMode, "download")) return;
     const dest = resolveDownloadDest(index, paths, op);
     if (op.save_id != null) {
       await client.downloadSaveContent(op.save_id, dest, {

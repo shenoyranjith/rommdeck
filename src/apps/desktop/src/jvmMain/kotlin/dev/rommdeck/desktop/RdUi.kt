@@ -59,6 +59,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import dev.rommdeck.shared.config.LibraryViewMode
 import androidx.compose.ui.unit.sp
 
 /** Shared height for toolbar inputs, icon buttons, and segmented controls (Electron `h-10`). */
@@ -604,8 +605,6 @@ fun ScanlineOverlay(strength: Int, modifier: Modifier = Modifier) {
 }
 
 enum class BadgeTone { OK, WARN, ERR, ACCENT, MUTED }
-
-enum class LibraryViewMode { GRID, LIST }
 
 enum class SelectionState { NONE, PARTIAL, ALL }
 

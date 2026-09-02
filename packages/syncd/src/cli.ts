@@ -75,6 +75,7 @@ async function syncOnce(reason: string): Promise<void> {
       deviceId: device.deviceId,
       paths: syncPaths,
       conflictPolicy: cfg.sync.conflictPolicy,
+      syncMode: cfg.sync.mode,
       unattended: true,
     });
 

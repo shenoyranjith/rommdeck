@@ -44,6 +44,7 @@ import dev.rommdeck.shared.config.RommDeckConfig
 import dev.rommdeck.shared.config.SyncConfig
 import dev.rommdeck.shared.config.SyncMode
 import dev.rommdeck.shared.config.createConfigRepository
+import dev.rommdeck.shared.config.saveSyncDaemonConfig
 import dev.rommdeck.shared.sync.AutoSyncAction
 import dev.rommdeck.shared.sync.DaemonStatus
 import dev.rommdeck.shared.sync.controlAutoSyncService
@@ -91,7 +92,7 @@ fun AutoSyncSettings(
         saveJob?.cancel()
         saveJob = scope.launch {
             delay(SyncSaveDebounceMs)
-            withContext(Dispatchers.IO) { repo.save(next) }
+            withContext(Dispatchers.IO) { repo.saveSyncDaemonConfig(next) }
         }
     }
 
@@ -100,7 +101,7 @@ fun AutoSyncSettings(
         val next = config.copy(sync = nextSync)
         onConfigChange(next)
         scope.launch {
-            withContext(Dispatchers.IO) { repo.save(next) }
+            withContext(Dispatchers.IO) { repo.saveSyncDaemonConfig(next) }
         }
     }
 
@@ -135,7 +136,7 @@ fun AutoSyncSettings(
                                             }
                                         }
                                         val nextSync = sync.copy(enabled = enabled)
-                                        repo.save(config.copy(sync = nextSync))
+                                        repo.saveSyncDaemonConfig(config.copy(sync = nextSync))
                                         onConfigChange(config.copy(sync = nextSync))
                                         val ctl = controlAutoSyncService(
                                             if (enabled) AutoSyncAction.ENABLE else AutoSyncAction.DISABLE,

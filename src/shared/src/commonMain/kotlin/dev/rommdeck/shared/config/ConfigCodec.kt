@@ -11,6 +11,11 @@ internal val configJson = Json {
 fun normalizeConfig(raw: RommDeckConfig): RommDeckConfig {
     val theme = if (raw.ui.theme in UI_THEMES) raw.ui.theme else DEFAULT_CONFIG.ui.theme
     val scanlineStrength = raw.ui.scanlineStrength.coerceIn(0, 100)
+    val libraryViewMode = if (raw.ui.libraryViewMode in LIBRARY_VIEW_MODES) {
+        raw.ui.libraryViewMode
+    } else {
+        DEFAULT_CONFIG.ui.libraryViewMode
+    }
 
     val deviceId = when (val id = raw.sync.deviceId) {
         null, "" -> null
@@ -25,7 +30,7 @@ fun normalizeConfig(raw: RommDeckConfig): RommDeckConfig {
 
     return raw.copy(
         sync = raw.sync.copy(deviceId = deviceId),
-        ui = raw.ui.copy(theme = theme, scanlineStrength = scanlineStrength),
+        ui = raw.ui.copy(theme = theme, scanlineStrength = scanlineStrength, libraryViewMode = libraryViewMode),
         logging = LoggingConfig(logLevel),
     )
 }

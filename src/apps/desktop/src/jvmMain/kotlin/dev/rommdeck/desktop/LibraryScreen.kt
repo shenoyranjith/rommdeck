@@ -50,6 +50,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.rommdeck.shared.config.RommDeckConfig
+import dev.rommdeck.shared.config.LibraryViewMode
+import dev.rommdeck.shared.config.createConfigRepository
 import dev.rommdeck.shared.db.openLibraryIndex
 import dev.rommdeck.shared.download.DeleteEsdeOptions
 import dev.rommdeck.shared.download.deleteLocalRom
@@ -85,8 +87,10 @@ fun LibraryScreen(
     onBusyChange: (Boolean, LibraryBusyKind?, Job?) -> Unit,
     onNotice: OnNotice,
     onStatsChanged: () -> Unit,
+    onConfigChange: (RommDeckConfig) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
+    val repo = remember { createConfigRepository() }
     val c = Rd
     val platformListState = rememberLazyListState()
     val romListState = rememberLazyListState()
@@ -117,7 +121,7 @@ fun LibraryScreen(
     fun runWhenComposed(block: () -> Unit) {
         if (isComposed.value) block()
     }
-    var viewMode by remember { mutableStateOf(LibraryViewMode.GRID) }
+    var viewMode by remember(config.ui.libraryViewMode) { mutableStateOf(config.ui.libraryViewMode) }
     var selectMode by remember { mutableStateOf(false) }
     var selectAll by remember { mutableStateOf(false) }
     var selectedIds by remember { mutableStateOf(setOf<Int>()) }
@@ -531,7 +535,12 @@ fun LibraryScreen(
         ) {
             RdViewModeToggle(
                 viewMode = viewMode,
-                onViewModeChange = { viewMode = it },
+                onViewModeChange = { mode ->
+                    viewMode = mode
+                    val next = config.copy(ui = config.ui.copy(libraryViewMode = mode))
+                    onConfigChange(next)
+                    scope.launch(Dispatchers.IO) { repo.save(next) }
+                },
             )
             Box(Modifier.weight(1f)) {
                 RdField(
