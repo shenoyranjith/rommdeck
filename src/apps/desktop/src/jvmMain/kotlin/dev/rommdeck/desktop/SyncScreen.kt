@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -18,16 +19,21 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.rommdeck.shared.config.RommDeckConfig
 import dev.rommdeck.shared.play.ResolvedPlayPaths
+import dev.rommdeck.shared.sync.SyncDiscoveryStats
+import dev.rommdeck.shared.sync.SyncOperationSummary
 import dev.rommdeck.shared.sync.SyncResult
 import dev.rommdeck.shared.sync.readDaemonStatus
 import dev.rommdeck.shared.sync.runConfiguredSync
+import dev.rommdeck.shared.sync.summarizeSyncOperations
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -62,7 +68,7 @@ fun SyncScreen(
     ) {
         RdPageHeader(
             title = "Sync",
-            description = "Saves and states for RetroArch platforms, using the device-sync protocol.",
+            description = "RetroDECK saves and states with RomM.",
             actions = {
                 RdButton(
                     onClick = {
@@ -88,11 +94,14 @@ fun SyncScreen(
                 }
             },
         )
-        Row {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Auto-sync: ", color = c.muted, style = RdType.small)
-            RdButton(onClick = onOpenAutoSync) {
-                Text("Settings → Auto-sync", color = c.accent)
-            }
+            Text(
+                "Settings → Auto-sync",
+                color = c.accent,
+                style = RdType.small.copy(textDecoration = TextDecoration.Underline),
+                modifier = Modifier.rdInteractive(onClick = onOpenAutoSync),
+            )
         }
         if (!canSync) {
             RdAlert("Need RomM credentials and resolved saves/states paths.", AlertTone.ERR)
@@ -140,25 +149,117 @@ fun SyncScreen(
         }
         last?.let { result ->
             RdPanel(title = "Last manual sync") {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(
+                    Modifier
+                        .heightIn(max = 448.dp)
+                        .verticalScroll(rememberScrollState())
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
                     Text(
                         "session ${result.sessionId ?: "—"} · completed ${result.completed} · failed ${result.failed}",
                         color = c.accent,
                         style = RdType.mono,
                     )
-                    Text("Local saves offered: ${result.localSaves}", color = c.muted, style = RdType.small)
-                    if (result.conflicts.isNotEmpty()) {
+                    if (result.deviceRegistered || result.deviceUpdated) {
                         Text(
-                            "Conflicts: ${result.conflicts.joinToString { it.file }}",
-                            color = c.warn,
+                            if (result.deviceRegistered) {
+                                "Device registered with RomM."
+                            } else {
+                                "Device registration updated (paths or sync mode changed)."
+                            },
+                            color = c.muted,
                             style = RdType.small,
                         )
                     }
-                    result.errors.forEach { err ->
-                        RdAlert(err, AlertTone.ERR)
+                    if (result.operations.isNotEmpty()) {
+                        SyncOperationSummaryGrid(summarizeSyncOperations(result.operations))
+                    }
+                    result.discovery?.let { SyncDiscoveryPanel(it) }
+                    if (result.errors.isNotEmpty()) {
+                        SyncErrorsPanel(result.errors)
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun SyncOperationSummaryGrid(summary: SyncOperationSummary) {
+    val c = Rd
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        listOf(
+            "Upload" to summary.upload,
+            "Download" to summary.download,
+            "Conflict" to summary.conflict,
+            "No-op" to summary.noOp,
+            "Total" to summary.total,
+        ).forEach { (label, count) ->
+            Column(
+                Modifier
+                    .weight(1f)
+                    .border(1.dp, c.accent.copy(alpha = 0.4f), RectangleShape)
+                    .background(c.bg2, RectangleShape)
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(label.uppercase(), color = c.muted, style = RdType.micro)
+                Text(
+                    count.toString(),
+                    color = c.accent,
+                    style = RdType.mono.copy(fontSize = 18.sp, fontWeight = FontWeight.SemiBold),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SyncDiscoveryPanel(discovery: SyncDiscoveryStats) {
+    val c = Rd
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .border(1.dp, c.accent.copy(alpha = 0.4f), RectangleShape)
+            .background(c.bg2, RectangleShape)
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text("Discovery", color = c.muted, style = RdType.micro)
+        Text("Indexed ROM files: ${discovery.indexedRomFiles}", color = c.muted, style = RdType.small)
+        Text("RetroArch platforms: ${discovery.retroArchRomFiles}", color = c.muted, style = RdType.small)
+        Text("Local saves/states found: ${discovery.existingSaveFiles}", color = c.muted, style = RdType.small)
+        if (discovery.skippedStandalonePlatforms.isNotEmpty()) {
+            Text(
+                "Skipped standalone-default platforms:",
+                color = c.muted,
+                style = RdType.small,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+            Text(
+                discovery.skippedStandalonePlatforms.joinToString(", "),
+                color = c.warn,
+                style = RdType.mono.copy(fontSize = 11.sp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun SyncErrorsPanel(errors: List<String>) {
+    val c = Rd
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .border(1.dp, c.danger.copy(alpha = 0.4f), RectangleShape)
+            .background(c.bg2, RectangleShape)
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text("Errors", color = c.danger, style = RdType.micro)
+        errors.forEach { err ->
+            Text("• $err", color = c.muted, style = RdType.small)
         }
     }
 }

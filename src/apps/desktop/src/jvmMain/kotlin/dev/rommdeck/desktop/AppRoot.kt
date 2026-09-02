@@ -183,6 +183,7 @@ fun AppRoot(
     val paths = remember(config.playTarget) { resolvePlayPaths(config.playTarget) }
     val appScope = rememberCoroutineScope()
     var tab by remember { mutableStateOf(NavTab.LIBRARY) }
+    var settingsSection by remember { mutableStateOf(SettingsSection.APPEARANCE) }
     var stats by remember { mutableStateOf(loadLibraryStats()) }
     var totalRoms by remember { mutableStateOf(0) }
     var daemon by remember { mutableStateOf(readDaemonStatus()) }
@@ -299,11 +300,16 @@ fun AppRoot(
                                             paths = paths,
                                             onNotice = onNotice,
                                             onConfigReloaded = { config = repo.load() },
-                                            onOpenAutoSync = { tab = NavTab.SETTINGS },
+                                            onOpenAutoSync = {
+                                                settingsSection = SettingsSection.AUTO_SYNC
+                                                tab = NavTab.SETTINGS
+                                            },
                                         )
                                         NavTab.SETTINGS -> SettingsScreen(
                                             config = config,
                                             paths = paths,
+                                            section = settingsSection,
+                                            onSectionChange = { settingsSection = it },
                                             onConfigChange = { config = it },
                                             onNotice = onNotice,
                                         )

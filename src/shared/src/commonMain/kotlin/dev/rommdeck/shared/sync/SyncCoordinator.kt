@@ -19,6 +19,10 @@ data class SyncResult(
     val conflicts: List<SyncOperation>,
     val errors: List<String>,
     val localSaves: Int,
+    val operations: List<SyncOperation> = emptyList(),
+    val discovery: SyncDiscoveryStats? = null,
+    val deviceRegistered: Boolean = false,
+    val deviceUpdated: Boolean = false,
 )
 
 suspend fun runSyncSession(
@@ -29,7 +33,8 @@ suspend fun runSyncSession(
     conflictPolicy: ConflictPolicy,
     unattended: Boolean,
 ): SyncResult {
-    val saves = buildNegotiatePayload(index, paths)
+    val payload = buildNegotiatePayload(index, paths)
+    val saves = payload.saves
     log.info("sync", "negotiate start", mapOf("deviceId" to deviceId, "localSaves" to saves.size))
     val negotiated = client.negotiate(deviceId, saves)
     log.info("sync", "negotiate complete", mapOf("sessionId" to negotiated.sessionId, "ops" to negotiated.operations.size))
@@ -85,13 +90,23 @@ suspend fun runSyncSession(
         conflicts = conflicts,
         errors = errors,
         localSaves = saves.size,
+        operations = negotiated.operations,
+        discovery = payload.discovery,
     )
 }
 
-fun buildNegotiatePayload(index: LibraryIndex, paths: SyncPaths): List<ClientSaveState> {
+fun buildNegotiatePayload(index: LibraryIndex, paths: SyncPaths): NegotiatePayloadResult {
+    val indexed = uniqueIndexedRomFiles(index.getAll())
+    val skippedStandalonePlatforms = linkedSetOf<String>()
+    var retroArchRomFiles = 0
     val saves = mutableListOf<ClientSaveState>()
-    for (row in uniqueIndexedRomFiles(index.getAll())) {
+    for (row in indexed) {
         val expected = resolveExpectedSavePaths(row, paths.savesPath, paths.statesPath)
+        if (expected.isEmpty()) {
+            skippedStandalonePlatforms.add(row.esdeFolder)
+            continue
+        }
+        retroArchRomFiles++
         for (candidate in expected) {
             if (!fileExists(candidate.absolutePath)) continue
             try {
@@ -109,7 +124,15 @@ fun buildNegotiatePayload(index: LibraryIndex, paths: SyncPaths): List<ClientSav
             }
         }
     }
-    return saves
+    return NegotiatePayloadResult(
+        saves = saves,
+        discovery = SyncDiscoveryStats(
+            indexedRomFiles = indexed.size,
+            retroArchRomFiles = retroArchRomFiles,
+            skippedStandalonePlatforms = skippedStandalonePlatforms.sorted(),
+            existingSaveFiles = saves.size,
+        ),
+    )
 }
 
 private suspend fun uploadOp(

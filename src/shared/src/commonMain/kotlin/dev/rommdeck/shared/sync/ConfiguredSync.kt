@@ -50,6 +50,9 @@ suspend fun runConfiguredSync(unattended: Boolean = true): SyncResult {
             paths = syncPaths,
             conflictPolicy = cfg.sync.conflictPolicy,
             unattended = unattended,
+        ).copy(
+            deviceRegistered = device.registered,
+            deviceUpdated = device.updated,
         )
     } finally {
         client.close()

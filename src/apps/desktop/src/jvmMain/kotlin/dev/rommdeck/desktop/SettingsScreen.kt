@@ -56,11 +56,12 @@ import java.io.File
 fun SettingsScreen(
     config: RommDeckConfig,
     paths: ResolvedPlayPaths,
+    section: SettingsSection,
+    onSectionChange: (SettingsSection) -> Unit,
     onConfigChange: (RommDeckConfig) -> Unit,
     onNotice: OnNotice,
 ) {
     val c = Rd
-    var section by remember { mutableStateOf(SettingsSection.APPEARANCE) }
     Column(Modifier.fillMaxSize()) {
         Text("Settings", color = c.text, style = RdType.title, modifier = Modifier.padding(bottom = 16.dp))
         Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -76,7 +77,7 @@ fun SettingsScreen(
                             SettingsSection.AUTO_SYNC -> RdIconKind.SYNC
                             SettingsSection.LOGGING -> RdIconKind.DRIVE
                         },
-                        onClick = { section = item },
+                        onClick = { onSectionChange(item) },
                         iconSize = 18.dp,
                         compact = true,
                     )

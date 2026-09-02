@@ -39,12 +39,15 @@ class NegotiatePayloadTest {
                 ),
             )
 
-            assertEquals(1, payload.size)
-            assertEquals("Demo (USA).srm", payload[0].fileName)
-            assertEquals("default", payload[0].slot)
-            assertEquals("retroarch", payload[0].emulator)
-            assertEquals(99, payload[0].romId)
-            assertTrue(payload[0].contentHash.matches(Regex("^[a-f0-9]{32}$")))
+            assertEquals(1, payload.saves.size)
+            assertEquals("Demo (USA).srm", payload.saves[0].fileName)
+            assertEquals("default", payload.saves[0].slot)
+            assertEquals("retroarch", payload.saves[0].emulator)
+            assertEquals(99, payload.saves[0].romId)
+            assertTrue(payload.saves[0].contentHash.matches(Regex("^[a-f0-9]{32}$")))
+            assertEquals(1, payload.discovery.indexedRomFiles)
+            assertEquals(1, payload.discovery.retroArchRomFiles)
+            assertEquals(1, payload.discovery.existingSaveFiles)
         } finally {
             index.close()
             root.toFile().deleteRecursively()
