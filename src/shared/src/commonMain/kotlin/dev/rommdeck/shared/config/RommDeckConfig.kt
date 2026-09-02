@@ -45,7 +45,7 @@ data class RommConfig(
     val apiToken: String = "",
 )
 
-/** ES-DE play paths; serialized as `retrodeck` for compatibility with the TypeScript app. */
+/** ES-DE play paths (Settings → Target). */
 @Serializable
 data class PlayTargetConfig(
     /** Path to retrodeck.json; empty = auto-detect on Linux when RetroDECK is installed. */
@@ -85,7 +85,7 @@ data class LoggingConfig(
 @Serializable
 data class RommDeckConfig(
     val romm: RommConfig = RommConfig(),
-    @SerialName("retrodeck") val playTarget: PlayTargetConfig = PlayTargetConfig(),
+    @SerialName("target") val playTarget: PlayTargetConfig = PlayTargetConfig(),
     val sync: SyncConfig = SyncConfig(),
     val ui: UiConfig = UiConfig(),
     val logging: LoggingConfig = LoggingConfig(),

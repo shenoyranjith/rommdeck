@@ -25,7 +25,7 @@ if [[ ! -f "$MAIN_CFG" ]]; then
     "baseUrl": "http://192.168.1.10:8080",
     "apiToken": ""
   },
-  "retrodeck": {
+  "target": {
     "configPath": "$EXPANDED",
     "romsPath": "$ROOT/roms",
     "savesPath": "$ROOT/saves",

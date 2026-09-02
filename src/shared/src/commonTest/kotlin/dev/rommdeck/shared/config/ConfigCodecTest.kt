@@ -27,9 +27,10 @@ class ConfigCodecTest {
     }
 
     @Test
-    fun roundTripKeepsRetrodeckKey() {
+    fun roundTripUsesTargetKey() {
         val encoded = encodeConfig(DEFAULT_CONFIG.copy(romm = RommConfig(baseUrl = "http://test")))
-        assert(encoded.contains("\"retrodeck\""))
+        assert(encoded.contains("\"target\""))
+        assert(!encoded.contains("\"retrodeck\""))
         val decoded = decodeConfig(encoded)
         assertEquals("http://test", decoded.romm.baseUrl)
     }

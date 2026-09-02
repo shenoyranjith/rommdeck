@@ -1,15 +1,15 @@
 ---
 name: RommDeck
-overview: 'Cross-platform RomM ↔ ES-DE bridge. v0.1.0 ships Linux desktop + RetroDECK integration. v0.2.0 adds plain ES-DE targets, macOS/Windows/Android, packaging, broader sync, and play sessions.'
+overview: 'Cross-platform RomM ↔ ES-DE bridge. v0.1.0 ships Linux desktop with plain ES-DE + RetroDECK path resolution. v0.2.0 adds packaging, macOS/Windows/Android, ES-DE polish, broader sync, and play sessions.'
 todos:
-  - id: plain-esde
-    content: 'Plain ES-DE installs — first-class manual ROM/save/state roots, ES-DE path conventions without RetroDECK'
+  - id: packaging
+    content: 'Production packaging — installable desktop app + fixed syncd prefix (ROMMDECK_APP_ROOT, ROMMDECK_SYNCD_DIST)'
     status: pending
   - id: desktop-platforms
     content: 'Desktop on macOS and Windows — Compose Desktop builds, per-OS sync daemon/service'
     status: pending
-  - id: packaging
-    content: 'Production packaging — installable desktop app + fixed syncd prefix (ROMMDECK_APP_ROOT, ROMMDECK_SYNCD_DIST)'
+  - id: esde-polish
+    content: 'ES-DE polish — tests for ESDE_AUTO, non-standard folder layouts, Settings copy'
     status: pending
   - id: android-app
     content: 'Android client — RomM library, downloads, save sync on mobile'
@@ -27,50 +27,64 @@ isProject: false
 ---
 # RommDeck: RomM ↔ ES-DE
 
-Cross-platform bridge between **[RomM](https://github.com/rommapp/romm)** and **[ES-DE](https://www.es-de.org/)** — download ROMs, sync gamelist metadata and media, and keep saves/states in sync. **[RetroDECK](https://retrodeck.net/)** is a supported ES-DE distribution (auto-detected on Linux); the product target is ES-DE generally, not RetroDECK alone.
+Cross-platform bridge between **[RomM](https://github.com/rommapp/romm)** and **[ES-DE](https://www.es-de.org/)** — download ROMs, sync gamelist metadata and media, and keep saves/states in sync. **[RetroDECK](https://retrodeck.net/)** is one supported ES-DE distribution (auto-detected on Linux via `retrodeck.json`); the product target is **ES-DE generally**.
 
 ## v0.1.0 (current)
 
-**Linux desktop** + **RomM 5.x** + **ES-DE** (RetroDECK auto-detection on Linux).
+**Linux desktop** + **RomM 5.x** + **ES-DE** (plain or RetroDECK).
+
+### Shipped
 
 - Library browse/download, ES-DE `gamelist.xml` + media, download queue
 - RetroArch battery saves + save states (Device Sync Protocol)
 - Auto-sync daemon on Linux (systemd user service)
-- Manual Target paths for ROM / save / state folders
+- **Plain ES-DE path resolution** ([`JvmPlayPathResolver.kt`](src/shared/src/jvmMain/kotlin/dev/rommdeck/shared/play/JvmPlayPathResolver.kt)):
+  - Manual Target paths (ROM / save / state) in Settings
+  - **ES-DE auto-detect** when fields are empty — common Linux/macOS/Windows install roots (`~/.local/share/ES-DE`, Flatpak paths, etc.)
+  - RetroDECK via `retrodeck.json` when present (Linux priority before ES-DE heuristics)
+- **ES-DE layout** for gamelist + media ([`EsdePaths.kt`](src/shared/src/commonMain/kotlin/dev/rommdeck/shared/esde/EsdePaths.kt)) — nested ES-DE under RetroDECK home or plain ES-DE root
+- Settings → Target shows resolved source: `esde`, `retrodeck`, `override`, or `unconfigured`
 - **Kotlin Multiplatform** + **Compose Desktop**, shared JVM library, MIT license
 
 Save sync reference: [romm-tender](https://github.com/danielcopper/romm-tender).
+
+### Known gaps (not blockers for daily Linux + ES-DE use)
+
+- No automated tests for `detectEsdeCandidate()` / `PathSource.ESDE_AUTO`
+- Non-standard ES-DE folder layouts (custom subdir names) may need manual paths
+- macOS/Windows **desktop app** not shipped yet (detection code exists in JVM resolver)
 
 ---
 
 ## v0.2.0 (planned)
 
-All items ship in **v0.2.0**, in this order:
+Suggested order:
 
-### 1. Plain ES-DE (non-RetroDECK)
+### 1. Packaging
 
-First-class support for ES-DE installs that are not RetroDECK.
+End-user installs without cloning the dev repo.
 
-- Discover or configure ROM / save / state roots without `retrodeck.json`
-- ES-DE gamelist + media paths from user config or ES-DE conventions
-- Settings UX polished for arbitrary ES-DE directory layouts
-- Path abstraction in `shared` (foundation for multi-platform and standalone sync)
+- Installable desktop app (AppImage / deb — TBD)
+- Production `rommdeck-syncd` with fixed prefix (`ROMMDECK_APP_ROOT`, `ROMMDECK_SYNCD_DIST`)
+- Build on Gradle `:apps:syncd:installDist` and in-app daemon installer
+- Replace removed Node `deploy-syncd.sh` with Kotlin-oriented deploy docs/script
 
 ### 2. Desktop on macOS and Windows
 
 Same RomM ↔ ES-DE feature set on additional desktop OSes.
 
 - Compose Desktop builds for macOS and Windows
-- Background sync via launchd / scheduled task (building on existing `InstallSyncDaemon` hooks)
+- Background sync via launchd / scheduled task (building on existing [`InstallSyncDaemon.kt`](src/shared/src/jvmMain/kotlin/dev/rommdeck/shared/sync/InstallSyncDaemon.kt) hooks)
 - Platform-specific config and data dirs
+- ES-DE auto-detect already has macOS/Windows roots in `detectEsdeCandidate()`
 
-### 3. Packaging
+### 3. ES-DE polish
 
-End-user installs without cloning the dev repo.
+Finish first-class ES-DE story beyond what v0.1.0 already runs.
 
-- Installable desktop app per OS (AppImage / deb / macOS / Windows — TBD)
-- Production `rommdeck-syncd` with fixed prefix (`ROMMDECK_APP_ROOT`, `ROMMDECK_SYNCD_DIST`)
-- Build on Gradle `:apps:syncd:installDist` and in-app daemon installer
+- Tests for plain ES-DE auto-detect and manual override precedence
+- Settings copy/UX: de-emphasize RetroDECK-only wording where ES-DE is primary
+- Optional: richer discovery for non-standard folder layouts
 
 ### 4. Android app
 
@@ -105,7 +119,7 @@ Edge cases for complex ROM layouts.
 
 | Piece | Role |
 | --- | --- |
-| `src/shared` | KMP library — RomM client, downloads, SQLite index, ES-DE writer, sync engine |
+| `src/shared` | KMP library — RomM client, downloads, SQLite index, ES-DE writer, sync engine, path resolution |
 | `src/apps/desktop` | Compose Desktop app (**Linux** in v0.1.0) |
 | `src/apps/syncd` | Background sync JVM sidecar |
 | `src/apps/android` | Jetpack Compose stub → full client in v0.2.0 |

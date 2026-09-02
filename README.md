@@ -4,9 +4,9 @@
 
 RommDeck is a **cross-platform** app that connects **[RomM](https://github.com/rommapp/romm)** (your self-hosted library) to **[ES-DE](https://www.es-de.org/)** (EmulationStation Desktop Edition) on your machine. Download ROMs into the right ES-DE folders, write gamelist metadata and artwork from RomM, and keep battery saves and save states synced across devices—even when the app is closed.
 
-**[RetroDECK](https://retrodeck.net/)** is a fully supported ES-DE distribution (auto-detected on Linux). Plain ES-DE installs and other platforms are on the roadmap.
+**ES-DE is supported** — plain installs and **[RetroDECK](https://retrodeck.net/)** (auto-detected on Linux when present). Leave Target paths empty for auto-detect, or set ROM / save / state folders manually in Settings.
 
-Built with **Kotlin Multiplatform** and **Compose**. Targets **RomM 5.x**. **v0.1.0** ships a **Linux desktop** app; Android and additional desktop OSes are planned.
+Built with **Kotlin Multiplatform** and **Compose**. Targets **RomM 5.x**. **v0.1.0** ships a **Linux desktop** app; macOS, Windows, and Android are planned.
 
 ---
 
@@ -42,7 +42,7 @@ Built with **Kotlin Multiplatform** and **Compose**. Targets **RomM 5.x**. **v0.
 
 ### Settings and polish
 
-- **Target paths** — ROM, save, and state folders for your ES-DE layout; RetroDECK auto-detection on Linux when installed
+- **Target paths** — ROM, save, and state folders for your ES-DE layout; auto-detect plain ES-DE or RetroDECK when fields are left empty (Linux)
 - **Platform map editor** — override RomM slug → ES-DE folder mappings when your library layout differs
 - **Themes** — candy, gold, vector, mint with optional CRT scanline overlay
 - **Structured logging** — configurable debug/info/warn/error
@@ -83,7 +83,7 @@ Config and state use standard paths on each platform (Linux: `~/.config/rommdeck
 ### Runtime (using v0.1.0)
 
 - **Linux** desktop (macOS and Windows planned)
-- An **ES-DE** ROM library — **[RetroDECK](https://retrodeck.net/)** (Flatpak) is the tested path on Linux; manual ROM/save/state paths work via Settings → Target
+- **ES-DE** — plain install or RetroDECK. Auto-detect common ES-DE folders when Target paths are empty, or set ROM / save / state paths manually in Settings → Target
 - **RomM 5.x** reachable from your machine
 - RomM **Client API Token** with library, asset, and device scopes ([details](#romm-api-token))
 
@@ -108,7 +108,7 @@ For UI work with Compose Hot Reload (save Kotlin files → UI updates without a 
 ```
 
 1. Open **Settings → RomM** — set your RomM URL and API token, test connection.
-2. Open **Settings → Target** — confirm ROM, save, and state paths (RetroDECK auto-detected on Linux when present).
+2. Open **Settings → Target** — confirm ROM, save, and state paths (auto-detected for plain ES-DE or RetroDECK when empty).
 3. Browse the **Library**, download a game, check it appears in ES-DE.
 4. Optional: **Settings → Auto-sync → Enable** for background save sync (Linux; installs and starts `rommdeck-syncd`).
 
@@ -162,11 +162,11 @@ Sync runs when you click **Sync Now**, on a schedule (default 5 min), and after 
 
 ## Configuration
 
-`~/.config/rommdeck/config.json` — shared by the app and daemon. See `fixtures/config.example.json`. The `retrodeck` key in JSON holds **Target** paths (ROM, save, state) for any ES-DE layout.
+`~/.config/rommdeck/config.json` — shared by the app and daemon. See `fixtures/config.example.json`. Settings → Target is stored under `"target"`.
 
 | Setting | Default | Notes |
 | --- | --- | --- |
-| `retrodeck.*Path` | auto or manual | ES-DE ROM / save / state folders (Settings → Target) |
+| `target.*Path` | auto or manual | ES-DE ROM / save / state folders (Settings → Target) |
 | `sync.enabled` | `false` | Toggle via Settings → Auto-sync |
 | `sync.mode` | `push_pull` | Or `pull_only` (download only), `push_only` (upload only) |
 | `sync.intervalSeconds` | `300` | Background poll interval |
@@ -219,7 +219,7 @@ Roadmap and design notes: [`RommDeck-plan.md`](RommDeck-plan.md).
 
 ## Limitations
 
-RommDeck does not upload ROMs to RomM, launch games, or pick RetroArch cores. **v0.1.0** ships the **Linux desktop** app with RetroDECK auto-detection; standalone-emulator save paths, macOS/Windows desktop builds, Android, and installable packages are planned for **v0.2.0**.
+RommDeck does not upload ROMs to RomM, launch games, or pick RetroArch cores. **v0.1.0** ships the **Linux desktop** app with **plain ES-DE and RetroDECK** path support; standalone-emulator save paths, macOS/Windows desktop builds, Android, and installable packages are planned for **v0.2.0**.
 
 ---
 
