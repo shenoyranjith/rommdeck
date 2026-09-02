@@ -50,12 +50,23 @@ private fun detailBadges(onDisk: Boolean, queueStatus: DownloadJobStatus?): List
             else -> listOf(DetailBadge("Missing", BadgeTone.WARN))
         }
     }
-    return listOf(DetailBadge("Downloaded", BadgeTone.OK))
+    return when (queueStatus) {
+        DownloadJobStatus.METADATA -> listOf(
+            DetailBadge("Downloaded", BadgeTone.OK),
+            DetailBadge("Writing metadata", BadgeTone.ACCENT),
+        )
+        else -> listOf(DetailBadge("Downloaded", BadgeTone.OK))
+    }
 }
 
 fun SessionDownloadQueue.activeJobStatus(romId: Int): DownloadJobStatus? =
-    jobs.firstOrNull { it.rom.id == romId && it.status in setOf(DownloadJobStatus.QUEUED, DownloadJobStatus.RUNNING) }
-        ?.status
+    jobs.firstOrNull {
+        it.rom.id == romId && it.status in setOf(
+            DownloadJobStatus.QUEUED,
+            DownloadJobStatus.RUNNING,
+            DownloadJobStatus.METADATA,
+        )
+    }?.status
 
 @Composable
 fun RomDetailPane(
@@ -214,6 +225,11 @@ fun RomDetailPane(
                             DownloadJobStatus.RUNNING -> {
                                 RdButton(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth()) {
                                     Text("Downloading…")
+                                }
+                            }
+                            DownloadJobStatus.METADATA -> {
+                                RdButton(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth()) {
+                                    Text("Writing metadata…")
                                 }
                             }
                             else -> {

@@ -35,6 +35,14 @@ class DownloadManager(
         rom: RommRom,
         onProgress: (bytesWritten: Long) -> Unit = {},
     ) {
+        downloadRomFiles(rom, onProgress)
+        syncRomMetadata(rom)
+    }
+
+    suspend fun downloadRomFiles(
+        rom: RommRom,
+        onProgress: (bytesWritten: Long) -> Unit = {},
+    ) {
         val slug = rom.platformSlug ?: error("ROM ${rom.id} has no platform_slug")
         val filenames = rom.contentFilenames()
         if (filenames.isEmpty()) error("ROM ${rom.id} has no files to download")
@@ -71,15 +79,22 @@ class DownloadManager(
             )
         }
 
-        if (config.syncMetadataOnDownload && config.esdeHomePath.isNotBlank()) {
-            val layout = resolveEsdeLayout(config.esdeHomePath, config.downloadedMediaPath)
-            val gamelistPath = gamelistFilePath(layout.gamelistsRoot, esdeFolder)
-            val entry = buildGamelistEntry(rom, filenames.first())
-            upsertGamelistGame(gamelistPath, entry)
-            log.info("esde", "gamelist upserted", mapOf("path" to gamelistPath, "rom" to rom.name))
-        }
+        log.info("download", "files complete", mapOf("romId" to rom.id))
+    }
 
-        log.info("download", "complete", mapOf("romId" to rom.id))
+    suspend fun syncRomMetadata(rom: RommRom) {
+        if (!config.syncMetadataOnDownload || config.esdeHomePath.isBlank()) return
+
+        val slug = rom.platformSlug ?: return
+        val filenames = rom.contentFilenames()
+        if (filenames.isEmpty()) return
+
+        val esdeFolder = rommSlugToEsdeFolder(slug, config.platformMapOverrides)
+        val layout = resolveEsdeLayout(config.esdeHomePath, config.downloadedMediaPath)
+        val gamelistPath = gamelistFilePath(layout.gamelistsRoot, esdeFolder)
+        val entry = buildGamelistEntry(rom, filenames.first())
+        upsertGamelistGame(gamelistPath, entry)
+        log.info("esde", "gamelist upserted", mapOf("path" to gamelistPath, "rom" to rom.name))
     }
 }
 

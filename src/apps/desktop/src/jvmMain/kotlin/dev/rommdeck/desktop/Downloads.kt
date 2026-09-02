@@ -29,7 +29,7 @@ internal const val CatalogPageSize = 100
 private const val ProgressUpdateIntervalMs = 50L
 private const val MinRunningDisplayMs = 500L
 
-enum class DownloadJobStatus { QUEUED, RUNNING, DONE, FAILED }
+enum class DownloadJobStatus { QUEUED, RUNNING, METADATA, DONE, FAILED }
 
 data class DownloadJob(
     val rom: RommRom,
@@ -44,6 +44,7 @@ class SessionDownloadQueue {
     private val cancelledRomIds = mutableSetOf<Int>()
     private var activeRomId: Int? = null
     private var activeDownload: Job? = null
+    private val metadataJobs = mutableMapOf<Int, Job>()
     private var lastProgressUpdateMs = 0L
     private var runningStartedAtMs = 0L
 
@@ -54,6 +55,7 @@ class SessionDownloadQueue {
 
     val queuedCount: Int get() = jobs.count { it.status == DownloadJobStatus.QUEUED }
     val runningCount: Int get() = jobs.count { it.status == DownloadJobStatus.RUNNING }
+    val metadataCount: Int get() = jobs.count { it.status == DownloadJobStatus.METADATA }
     val failedCount: Int get() = jobs.count { it.status == DownloadJobStatus.FAILED }
 
     /** Increments when a download completes successfully (used to refresh library state). */
@@ -61,15 +63,20 @@ class SessionDownloadQueue {
         private set
 
     val hasActiveWork: Boolean
-        get() = jobs.any { it.status == DownloadJobStatus.QUEUED || it.status == DownloadJobStatus.RUNNING }
+        get() = jobs.any {
+            it.status == DownloadJobStatus.QUEUED ||
+                it.status == DownloadJobStatus.RUNNING ||
+                it.status == DownloadJobStatus.METADATA
+        }
 
     val displayJobs: List<DownloadJob>
         get() {
             fun rank(status: DownloadJobStatus) = when (status) {
                 DownloadJobStatus.RUNNING -> 0
-                DownloadJobStatus.QUEUED -> 1
-                DownloadJobStatus.FAILED -> 2
-                DownloadJobStatus.DONE -> 3
+                DownloadJobStatus.METADATA -> 1
+                DownloadJobStatus.QUEUED -> 2
+                DownloadJobStatus.FAILED -> 3
+                DownloadJobStatus.DONE -> 4
             }
             return jobs.withIndex()
                 .filter { it.value.status != DownloadJobStatus.DONE }
@@ -90,6 +97,7 @@ class SessionDownloadQueue {
     fun cancelRom(romId: Int) {
         cancelledRomIds.add(romId)
         jobs = jobs.filterNot { it.rom.id == romId && it.status == DownloadJobStatus.QUEUED }
+        metadataJobs[romId]?.cancel()
         if (activeRomId == romId) {
             activeDownload?.cancel()
         }
@@ -97,7 +105,9 @@ class SessionDownloadQueue {
 
     fun cancelAll() {
         jobs.filter {
-            it.status == DownloadJobStatus.QUEUED || it.status == DownloadJobStatus.RUNNING
+            it.status == DownloadJobStatus.QUEUED ||
+                it.status == DownloadJobStatus.RUNNING ||
+                it.status == DownloadJobStatus.METADATA
         }.forEach { cancelRom(it.rom.id) }
     }
 
@@ -151,6 +161,75 @@ class SessionDownloadQueue {
         jobs = jobs.filter { it.rom.id != romId }
     }
 
+    private fun managerConfig(paths: ResolvedPlayPaths, config: RommDeckConfig) = DownloadManagerConfig(
+        romsPath = paths.romsPath,
+        esdeHomePath = paths.esdeHomePath,
+        downloadedMediaPath = paths.downloadedMediaPath,
+        platformMapOverrides = config.platformMapOverrides,
+        syncMetadataOnDownload = config.playTarget.syncMetadataOnDownload,
+    )
+
+    private fun needsMetadata(config: RommDeckConfig, paths: ResolvedPlayPaths): Boolean =
+        config.playTarget.syncMetadataOnDownload && paths.esdeHomePath.isNotBlank()
+
+    private fun scheduleMetadata(
+        romId: Int,
+        config: RommDeckConfig,
+        paths: ResolvedPlayPaths,
+        onDone: () -> Unit,
+    ) {
+        val index = jobs.indexOfFirst { it.rom.id == romId }
+        if (index < 0) return
+        val job = jobs[index]
+        val totalBytes = job.totalBytes ?: job.progressBytes
+        setAt(index, job.copy(status = DownloadJobStatus.METADATA, progressBytes = totalBytes))
+
+        metadataJobs[romId] = workerScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    val client = createRommClient(config.romm)
+                    val library = openLibraryIndex()
+                    try {
+                        DownloadManager(
+                            client = client,
+                            index = library,
+                            config = managerConfig(paths, config),
+                        ).syncRomMetadata(job.rom)
+                    } finally {
+                        client.close()
+                        library.close()
+                    }
+                }
+                if (romId in cancelledRomIds) {
+                    removeJob(romId)
+                    return@launch
+                }
+                removeJob(romId)
+                completionCount++
+                onDone()
+            } catch (_: CancellationException) {
+                removeJob(romId)
+            } catch (e: Exception) {
+                if (romId in cancelledRomIds) {
+                    removeJob(romId)
+                } else {
+                    val failIndex = jobs.indexOfFirst { it.rom.id == romId }
+                    if (failIndex >= 0) {
+                        setAt(
+                            failIndex,
+                            jobs[failIndex].copy(
+                                status = DownloadJobStatus.FAILED,
+                                error = e.message ?: e.toString(),
+                            ),
+                        )
+                    }
+                }
+            } finally {
+                metadataJobs.remove(romId)
+            }
+        }
+    }
+
     private fun updateProgress(romId: Int, bytes: Long, force: Boolean = false) {
         val now = System.currentTimeMillis()
         if (!force && now - lastProgressUpdateMs < ProgressUpdateIntervalMs) return
@@ -202,14 +281,8 @@ class SessionDownloadQueue {
                                 DownloadManager(
                                     client = client,
                                     index = library,
-                                    config = DownloadManagerConfig(
-                                        romsPath = paths.romsPath,
-                                        esdeHomePath = paths.esdeHomePath,
-                                        downloadedMediaPath = paths.downloadedMediaPath,
-                                        platformMapOverrides = config.platformMapOverrides,
-                                        syncMetadataOnDownload = config.playTarget.syncMetadataOnDownload,
-                                    ),
-                                ).downloadRom(job.rom) { bytes ->
+                                    config = managerConfig(paths, config),
+                                ).downloadRomFiles(job.rom) { bytes ->
                                     reportDownloadProgress(romId, bytes)
                                 }
                             } finally {
@@ -223,8 +296,9 @@ class SessionDownloadQueue {
                         removeJob(job.rom.id)
                         continue
                     }
-                    val doneIndex = jobs.indexOfFirst { it.rom.id == job.rom.id }
-                    if (doneIndex >= 0) {
+                    if (needsMetadata(config, paths)) {
+                        scheduleMetadata(romId, config, paths, onDone)
+                    } else {
                         removeJob(job.rom.id)
                         completionCount++
                         onDone()

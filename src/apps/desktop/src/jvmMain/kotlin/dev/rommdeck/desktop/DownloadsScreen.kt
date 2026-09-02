@@ -38,7 +38,7 @@ fun DownloadsScreen(
 ) {
     val c = Rd
     val listState = rememberLazyListState()
-    val hasActive = queue.queuedCount > 0 || queue.runningCount > 0
+    val hasActive = queue.queuedCount > 0 || queue.runningCount > 0 || queue.metadataCount > 0
 
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         RdPageHeader(
@@ -89,6 +89,10 @@ fun DownloadsScreen(
                         if (queue.queuedCount > 0) {
                             if (isNotEmpty()) append(" · ")
                             append("${queue.queuedCount} queued")
+                        }
+                        if (queue.metadataCount > 0) {
+                            if (isNotEmpty()) append(" · ")
+                            append("${queue.metadataCount} metadata")
                         }
                         if (queue.failedCount > 0) {
                             if (isNotEmpty()) append(" · ")
@@ -166,10 +170,12 @@ private fun DownloadJobRow(
     val tone = when (job.status) {
         DownloadJobStatus.QUEUED -> BadgeTone.WARN
         DownloadJobStatus.RUNNING -> BadgeTone.ACCENT
+        DownloadJobStatus.METADATA -> BadgeTone.ACCENT
         DownloadJobStatus.DONE -> BadgeTone.OK
         DownloadJobStatus.FAILED -> BadgeTone.ERR
     }
     val fraction = when (job.status) {
+        DownloadJobStatus.METADATA -> 1f
         DownloadJobStatus.RUNNING -> {
             val total = job.totalBytes
             when {
@@ -181,6 +187,7 @@ private fun DownloadJobRow(
         else -> 0f
     }
     val progressLabel = when (job.status) {
+        DownloadJobStatus.METADATA -> "Writing ES-DE metadata…"
         DownloadJobStatus.RUNNING -> buildString {
             append(formatBytes(job.progressBytes))
             job.totalBytes?.let { append(" / ${formatBytes(it)}") }
@@ -188,7 +195,9 @@ private fun DownloadJobRow(
         DownloadJobStatus.QUEUED -> job.totalBytes?.let { formatBytes(it) }
         else -> null
     }
-    val canCancel = job.status == DownloadJobStatus.QUEUED || job.status == DownloadJobStatus.RUNNING
+    val canCancel = job.status == DownloadJobStatus.QUEUED ||
+        job.status == DownloadJobStatus.RUNNING ||
+        job.status == DownloadJobStatus.METADATA
     val canRetry = job.status == DownloadJobStatus.FAILED
 
     Row(
@@ -242,7 +251,11 @@ private fun DownloadJobRow(
                 overflow = TextOverflow.Ellipsis,
             )
             if (job.status != DownloadJobStatus.FAILED) {
-                RdProgress(fraction, pulse = job.status == DownloadJobStatus.RUNNING && fraction <= 0f)
+                RdProgress(
+                    fraction,
+                    pulse = job.status == DownloadJobStatus.METADATA ||
+                        (job.status == DownloadJobStatus.RUNNING && fraction <= 0f),
+                )
                 if (progressLabel != null) {
                     Text(
                         progressLabel,
