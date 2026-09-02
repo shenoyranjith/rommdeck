@@ -12,7 +12,9 @@ import dev.rommdeck.shared.download.DownloadManagerConfig
 import dev.rommdeck.shared.play.ResolvedPlayPaths
 import dev.rommdeck.shared.romm.RommRom
 import dev.rommdeck.shared.romm.createRommClient
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
@@ -30,6 +32,8 @@ data class DownloadJob(
 )
 
 class SessionDownloadQueue {
+    private val workerScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
     var jobs by mutableStateOf(listOf<DownloadJob>())
         private set
     var pumping by mutableStateOf(false)
@@ -40,12 +44,34 @@ class SessionDownloadQueue {
     val failedCount: Int get() = jobs.count { it.status == DownloadJobStatus.FAILED }
     val doneCount: Int get() = jobs.count { it.status == DownloadJobStatus.DONE }
 
+    val hasActiveWork: Boolean
+        get() = jobs.any { it.status == DownloadJobStatus.QUEUED || it.status == DownloadJobStatus.RUNNING }
+
+    val displayJobs: List<DownloadJob>
+        get() {
+            fun rank(status: DownloadJobStatus) = when (status) {
+                DownloadJobStatus.RUNNING -> 0
+                DownloadJobStatus.QUEUED -> 1
+                DownloadJobStatus.FAILED -> 2
+                DownloadJobStatus.DONE -> 3
+            }
+            return jobs.withIndex()
+                .sortedWith(compareBy({ rank(it.value.status) }, { it.index }))
+                .map { it.value }
+        }
+
     fun enqueue(roms: List<RommRom>): Int {
         val existing = jobs.map { it.rom.id }.toSet()
         val add = roms.filter { it.id !in existing }.map { DownloadJob(it, DownloadJobStatus.QUEUED) }
         if (add.isEmpty()) return 0
         jobs = jobs + add
         return add.size
+    }
+
+    fun startPump(config: RommDeckConfig, paths: ResolvedPlayPaths, onDone: () -> Unit) {
+        workerScope.launch {
+            pump(config, paths, onDone)
+        }
     }
 
     suspend fun pump(config: RommDeckConfig, paths: ResolvedPlayPaths, onDone: () -> Unit) {
@@ -106,6 +132,64 @@ fun loadLibraryStats(): LibraryStats {
         index.getStats()
     } finally {
         index.close()
+    }
+}
+
+fun loadDownloadedIdsForSlug(slug: String): Set<Int> {
+    val index = openLibraryIndex()
+    return try {
+        index.getDownloadedRomIdsForSlug(slug).toSet()
+    } finally {
+        index.close()
+    }
+}
+
+fun loadAllDownloadedIdsForSlug(slug: String, search: String): List<Int> {
+    val index = openLibraryIndex()
+    return try {
+        if (search.isBlank()) {
+            index.getDownloadedRomIdsForSlug(slug)
+        } else {
+            val all = mutableListOf<Int>()
+            var offset = 0
+            while (true) {
+                val page = index.searchDownloadedRomIdsForSlugPage(
+                    slug,
+                    search,
+                    CatalogPageSize,
+                    offset,
+                )
+                if (page.isEmpty()) break
+                all += page
+                offset += page.size
+            }
+            all
+        }
+    } finally {
+        index.close()
+    }
+}
+
+suspend fun fetchAllCatalogRoms(
+    romm: RommConfig,
+    platformId: Int,
+    search: String?,
+): List<RommRom> = withContext(Dispatchers.IO) {
+    val client = createRommClient(romm)
+    try {
+        val all = mutableListOf<RommRom>()
+        var offset = 0
+        var total = Int.MAX_VALUE
+        while (offset < total) {
+            val page = client.getRoms(platformId, search, CatalogPageSize, offset)
+            total = page.total
+            all += page.items
+            offset += page.items.size
+            if (page.items.isEmpty()) break
+        }
+        all
+    } finally {
+        client.close()
     }
 }
 

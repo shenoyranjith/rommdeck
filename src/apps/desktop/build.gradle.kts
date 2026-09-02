@@ -48,6 +48,7 @@ kotlin {
             implementation(compose.material3)
             implementation(compose.materialIconsExtended)
             implementation(compose.ui)
+            implementation(libs.kotlinx.coroutines.swing)
             implementation(project(":shared"))
         }
     }

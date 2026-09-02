@@ -31,6 +31,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -57,16 +58,24 @@ import dev.rommdeck.shared.romm.RommRom
 import dev.rommdeck.shared.romm.createRommClient
 import dev.rommdeck.shared.romm.coverUrlFor
 import dev.rommdeck.shared.romm.platformIconUrl
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+enum class LibraryBusyKind { PLATFORM, DOWNLOAD, DELETE }
 
 @Composable
 fun LibraryScreen(
     config: RommDeckConfig,
     paths: ResolvedPlayPaths,
     queue: SessionDownloadQueue,
+    confirm: ConfirmController,
+    appScope: CoroutineScope,
+    busy: Boolean,
+    busyKind: LibraryBusyKind?,
+    onBusyChange: (Boolean, LibraryBusyKind?) -> Unit,
     onNotice: OnNotice,
     onStatsChanged: () -> Unit,
 ) {
@@ -93,8 +102,14 @@ fun LibraryScreen(
     var loadingMore by remember { mutableStateOf(false) }
     var catalogQueryId by remember { mutableIntStateOf(0) }
     var error by remember { mutableStateOf<String?>(null) }
-    var busy by remember { mutableStateOf(false) }
-    var busyKind by remember { mutableStateOf<LibraryBusyKind?>(null) }
+    val isComposed = remember { mutableStateOf(false) }
+    DisposableEffect(Unit) {
+        isComposed.value = true
+        onDispose { isComposed.value = false }
+    }
+    fun runWhenComposed(block: () -> Unit) {
+        if (isComposed.value) block()
+    }
     var viewMode by remember { mutableStateOf(LibraryViewMode.GRID) }
     var selectMode by remember { mutableStateOf(false) }
     var selectAll by remember { mutableStateOf(false) }
@@ -132,8 +147,9 @@ fun LibraryScreen(
         selectionTotal > 0 && selectedIds.size >= selectionTotal -> SelectionState.ALL
         else -> SelectionState.PARTIAL
     }
-    val displaySelectedIds = if (selectAll) visibleRoms.map { it.id }.toSet() else selectedIds
     val hasSelection = selectAll || selectedIds.isNotEmpty()
+
+    fun isRomSelected(romId: Int): Boolean = selectAll || romId in selectedIds
 
     fun closeDetail() {
         focusedRomId = null
@@ -183,7 +199,7 @@ fun LibraryScreen(
             return
         }
         selectAll = true
-        selectedIds = visibleRoms.map { it.id }.toSet()
+        selectedIds = emptySet()
     }
 
     fun romOnDisk(rom: RommRom): Boolean =
@@ -265,6 +281,14 @@ fun LibraryScreen(
         downloadedIds = withContext(Dispatchers.IO) { loadDownloadedIds() }
         downloadedTotal = withContext(Dispatchers.IO) {
             loadDownloadedCountForSlug(platform.slug)
+        }
+    }
+
+    LaunchedEffect(queue.doneCount) {
+        if (queue.doneCount == 0) return@LaunchedEffect
+        downloadedIds = withContext(Dispatchers.IO) { loadDownloadedIds() }
+        selected?.slug?.let { slug ->
+            downloadedTotal = withContext(Dispatchers.IO) { loadDownloadedCountForSlug(slug) }
         }
     }
 
@@ -407,13 +431,23 @@ fun LibraryScreen(
     }
 
     fun startPump() {
+        queue.startPump(config, paths, onStatsChanged)
+    }
+
+    fun deleteRomWithConfirm(rom: RommRom) {
         scope.launch {
-            queue.pump(config, paths, onStatsChanged)
-            downloadedIds = withContext(Dispatchers.IO) { loadDownloadedIds() }
-            selected?.slug?.let { slug ->
-                downloadedTotal = withContext(Dispatchers.IO) { loadDownloadedCountForSlug(slug) }
+            if (!confirm.confirmDeleteLocal("Delete local files for \"${rom.name}\"?")) return@launch
+            withContext(Dispatchers.IO) {
+                val index = openLibraryIndex()
+                try {
+                    deleteLocalRom(index, rom.id)
+                } finally {
+                    index.close()
+                }
             }
+            handleRomDeleted(rom.id)
             onStatsChanged()
+            onNotice("Removed local files")
         }
     }
 
@@ -450,26 +484,38 @@ fun LibraryScreen(
                             onNotice("Set RomM URL and a ROM folder in Settings")
                             return@RdButton
                         }
-                        val toQueue = if (selectAll) {
-                            visibleRoms.filter { it.id !in downloadedIds }
-                        } else {
-                            visibleRoms.filter { it.id in selectedIds && it.id !in downloadedIds }
-                        }
-                        if (toQueue.isEmpty()) {
-                            onNotice("Nothing to download for the current selection")
-                            return@RdButton
-                        }
-                        busy = true
-                        busyKind = LibraryBusyKind.DOWNLOAD
-                        scope.launch {
+                        onBusyChange(true, LibraryBusyKind.DOWNLOAD)
+                        appScope.launch {
                             try {
+                                val toQueue = if (selectAll) {
+                                    when (filter) {
+                                        RomFilter.DOWNLOADED -> emptyList()
+                                        else -> {
+                                            val platform = selected ?: return@launch
+                                            fetchAllCatalogRoms(
+                                                config.romm,
+                                                platform.id,
+                                                search.ifBlank { null },
+                                            ).filter { it.id !in downloadedIds }
+                                        }
+                                    }
+                                } else {
+                                    visibleRoms.filter { it.id in selectedIds && it.id !in downloadedIds }
+                                }
+                                if (toQueue.isEmpty()) {
+                                    onNotice("Nothing to download for the current selection")
+                                    return@launch
+                                }
                                 val n = queue.enqueue(toQueue)
                                 onNotice(if (n == 0) "Already queued" else "Queued $n ROM(s)")
                                 startPump()
-                                exitSelectMode()
+                                withContext(Dispatchers.Main) {
+                                    runWhenComposed { exitSelectMode() }
+                                }
+                            } catch (e: Exception) {
+                                onNotice(e.message ?: e.toString(), NotificationTone.Err)
                             } finally {
-                                busy = false
-                                busyKind = null
+                                onBusyChange(false, null)
                             }
                         }
                     },
@@ -483,18 +529,39 @@ fun LibraryScreen(
                 }
                 RdButton(
                     onClick = {
-                        val ids = if (selectAll) {
-                            visibleRoms.filter { it.id in downloadedIds }.map { it.id }
-                        } else {
-                            visibleRoms.filter { it.id in selectedIds && it.id in downloadedIds }.map { it.id }
-                        }
-                        if (ids.isEmpty()) {
-                            onNotice("No local files in the current selection")
-                            return@RdButton
-                        }
-                        busy = true
-                        busyKind = LibraryBusyKind.DELETE
-                        scope.launch {
+                        appScope.launch {
+                            val ids = if (selectAll) {
+                                val platform = selected
+                                when {
+                                    filter == RomFilter.MISSING -> emptyList()
+                                    filter == RomFilter.DOWNLOADED && platform != null ->
+                                        withContext(Dispatchers.IO) {
+                                            loadAllDownloadedIdsForSlug(platform.slug, search)
+                                        }
+                                    platform != null && search.isBlank() ->
+                                        withContext(Dispatchers.IO) {
+                                            loadDownloadedIdsForSlug(platform.slug).toList()
+                                        }
+                                    platform != null -> {
+                                        val all = fetchAllCatalogRoms(
+                                            config.romm,
+                                            platform.id,
+                                            search.ifBlank { null },
+                                        )
+                                        all.filter { it.id in downloadedIds }.map { it.id }
+                                    }
+                                    else -> emptyList()
+                                }
+                            } else {
+                                visibleRoms.filter { it.id in selectedIds && it.id in downloadedIds }.map { it.id }
+                            }
+                            if (ids.isEmpty()) {
+                                onNotice("No local files in the current selection")
+                                return@launch
+                            }
+                            val countLabel = if (ids.size == 1) "1 ROM" else "${ids.size} ROMs"
+                            if (!confirm.confirmDeleteLocal("Delete local files for $countLabel?")) return@launch
+                            onBusyChange(true, LibraryBusyKind.DELETE)
                             try {
                                 withContext(Dispatchers.IO) {
                                     val index = openLibraryIndex()
@@ -504,23 +571,26 @@ fun LibraryScreen(
                                         index.close()
                                     }
                                 }
-                                val removed = ids.filter { it in downloadedIds }
-                                downloadedIds = downloadedIds - removed.toSet()
-                                downloadedTotal = maxOf(0, downloadedTotal - removed.size)
-                                if (filter == RomFilter.DOWNLOADED) {
-                                    downloadedRoms = downloadedRoms.filter { it.id !in removed }
-                                    if (search.isNotBlank()) {
-                                        downloadedSearchTotal = maxOf(0, downloadedSearchTotal - removed.size)
-                                    }
-                                }
                                 onStatsChanged()
                                 onNotice("Removed local copies of ${ids.size} ROM(s)")
-                                exitSelectMode()
+                                withContext(Dispatchers.Main) {
+                                    runWhenComposed {
+                                        val removed = ids.filter { it in downloadedIds }
+                                        downloadedIds = downloadedIds - removed.toSet()
+                                        downloadedTotal = maxOf(0, downloadedTotal - removed.size)
+                                        if (filter == RomFilter.DOWNLOADED) {
+                                            downloadedRoms = downloadedRoms.filter { it.id !in removed }
+                                            if (search.isNotBlank()) {
+                                                downloadedSearchTotal = maxOf(0, downloadedSearchTotal - removed.size)
+                                            }
+                                        }
+                                        exitSelectMode()
+                                    }
+                                }
                             } catch (e: Exception) {
                                 onNotice(e.message ?: e.toString(), NotificationTone.Err)
                             } finally {
-                                busy = false
-                                busyKind = null
+                                onBusyChange(false, null)
                             }
                         }
                     },
@@ -540,9 +610,8 @@ fun LibraryScreen(
                         onNotice("Set RomM URL and a ROM folder in Settings")
                         return@RdButton
                     }
-                    busy = true
-                    busyKind = LibraryBusyKind.PLATFORM
-                    scope.launch {
+                    onBusyChange(true, LibraryBusyKind.PLATFORM)
+                    appScope.launch {
                         try {
                             val have = withContext(Dispatchers.IO) { loadDownloadedIds() }
                             val missing = mutableListOf<RommRom>()
@@ -560,14 +629,17 @@ fun LibraryScreen(
                                     client.close()
                                 }
                             }
+                            if (missing.isEmpty()) {
+                                onNotice("Nothing to download for ${platform.name}")
+                                return@launch
+                            }
                             val n = queue.enqueue(missing)
-                            onNotice(if (n == 0) "Nothing to queue" else "Queued $n ROM(s)")
+                            onNotice(if (n == 0) "Already queued" else "Queued $n ROM(s)")
                             startPump()
                         } catch (e: Exception) {
                             onNotice(e.message ?: e.toString(), NotificationTone.Err)
                         } finally {
-                            busy = false
-                            busyKind = null
+                            onBusyChange(false, null)
                         }
                     }
                 },
@@ -817,9 +889,9 @@ fun LibraryScreen(
                                 onNotice = onNotice,
                                 onStatsChanged = onStatsChanged,
                                 startPump = ::startPump,
-                                onDeleted = ::handleRomDeleted,
+                                onDelete = { deleteRomWithConfirm(rom) },
                                 selectMode = selectMode,
-                                isSelected = rom.id in displaySelectedIds,
+                                isSelected = isRomSelected(rom.id),
                                 isFocused = focusedRomId == rom.id,
                                 onToggleSelect = { toggleSelect(rom.id) },
                                 onCardClick = { onRomCardClick(rom) },
@@ -850,9 +922,9 @@ fun LibraryScreen(
                                 onNotice = onNotice,
                                 onStatsChanged = onStatsChanged,
                                 startPump = ::startPump,
-                                onDeleted = ::handleRomDeleted,
+                                onDelete = { deleteRomWithConfirm(rom) },
                                 selectMode = selectMode,
-                                isSelected = rom.id in displaySelectedIds,
+                                isSelected = isRomSelected(rom.id),
                                 isFocused = focusedRomId == rom.id,
                                 onToggleSelect = { toggleSelect(rom.id) },
                                 onCardClick = { onRomCardClick(rom) },
@@ -891,21 +963,7 @@ fun LibraryScreen(
                             startPump()
                         }
                     },
-                    onDelete = { rom ->
-                        scope.launch {
-                            withContext(Dispatchers.IO) {
-                                val index = openLibraryIndex()
-                                try {
-                                    deleteLocalRom(index, rom.id)
-                                } finally {
-                                    index.close()
-                                }
-                            }
-                            handleRomDeleted(rom.id)
-                            onStatsChanged()
-                            onNotice("Removed local files")
-                        }
-                    },
+                    onDelete = { rom -> deleteRomWithConfirm(rom) },
                 )
             }
         }
@@ -943,14 +1001,13 @@ private fun RomListItem(
     onNotice: OnNotice,
     onStatsChanged: () -> Unit,
     startPump: () -> Unit,
-    onDeleted: (Int) -> Unit,
+    onDelete: () -> Unit,
     selectMode: Boolean = false,
     isSelected: Boolean = false,
     isFocused: Boolean = false,
     onToggleSelect: () -> Unit = {},
     onCardClick: () -> Unit = {},
 ) {
-    val scope = rememberCoroutineScope()
     val coverUrl = coverUrlFor(rommBaseUrl, rom)
     RomRow(
         title = rom.name,
@@ -978,21 +1035,7 @@ private fun RomListItem(
                 startPump()
             }
         },
-        onDelete = {
-            scope.launch {
-                withContext(Dispatchers.IO) {
-                    val index = openLibraryIndex()
-                    try {
-                        deleteLocalRom(index, rom.id)
-                    } finally {
-                        index.close()
-                    }
-                }
-                onDeleted(rom.id)
-                onStatsChanged()
-                onNotice("Removed local files")
-            }
-        },
+        onDelete = onDelete,
         canDownload = canDownload,
     )
 }
@@ -1008,7 +1051,7 @@ private fun RomGridCard(
     onNotice: OnNotice,
     onStatsChanged: () -> Unit,
     startPump: () -> Unit,
-    onDeleted: (Int) -> Unit,
+    onDelete: () -> Unit,
     selectMode: Boolean = false,
     isSelected: Boolean = false,
     isFocused: Boolean = false,
@@ -1049,6 +1092,14 @@ private fun RomGridCard(
                 .background(c.bg0),
             contentAlignment = Alignment.Center,
         ) {
+            RommAssetImage(
+                url = coverUrl,
+                apiToken = apiToken,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Fit,
+            ) {
+                RomCoverFallback(Modifier.fillMaxSize())
+            }
             if (selectMode && isSelected) {
                 Box(
                     Modifier
@@ -1061,14 +1112,6 @@ private fun RomGridCard(
                 ) {
                     RdIcon(RdIconKind.CHECK, c.accentFg, 16.dp)
                 }
-            }
-            RommAssetImage(
-                url = coverUrl,
-                apiToken = apiToken,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Fit,
-            ) {
-                RomCoverFallback(Modifier.fillMaxSize())
             }
         }
         Column(
@@ -1105,21 +1148,7 @@ private fun RomGridCard(
             ) {
             if (!selectMode) {
             if (onDisk) {
-                RdButton(onClick = {
-                    scope.launch {
-                        withContext(Dispatchers.IO) {
-                            val index = openLibraryIndex()
-                            try {
-                                deleteLocalRom(index, rom.id)
-                            } finally {
-                                index.close()
-                            }
-                        }
-                        onDeleted(rom.id)
-                        onStatsChanged()
-                        onNotice("Removed local files")
-                    }
-                }, danger = true, compact = true, modifier = Modifier.fillMaxWidth()) {
+                RdButton(onClick = onDelete, danger = true, compact = true, modifier = Modifier.fillMaxWidth()) {
                     Text("Delete", color = LocalContentColor.current, style = RdType.small)
                 }
             } else {
@@ -1269,5 +1298,3 @@ private fun Modifier.platformItemSelection(active: Boolean, accent: Color): Modi
             )
         }
 }
-
-private enum class LibraryBusyKind { PLATFORM, DOWNLOAD, DELETE }

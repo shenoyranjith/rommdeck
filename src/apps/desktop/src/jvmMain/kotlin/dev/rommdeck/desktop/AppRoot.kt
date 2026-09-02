@@ -35,6 +35,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,18 +46,25 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.ApplicationScope
+import androidx.compose.ui.window.Window
+import androidx.compose.ui.window.rememberWindowState
 import dev.rommdeck.shared.config.RommDeckConfig
 import dev.rommdeck.shared.config.createConfigRepository
 import dev.rommdeck.shared.db.LibraryStats
 import dev.rommdeck.shared.play.resolvePlayPaths
 import dev.rommdeck.shared.romm.createRommClient
 import dev.rommdeck.shared.sync.readDaemonStatus
+import java.awt.Toolkit
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 private val ShellInset = 20.dp
 private val NotificationBorderWidth = 1.5.dp
+private const val BASE_WIDTH = 1280f
+private const val BASE_HEIGHT = 800f
 
 enum class NotificationTone { Ok, Err }
 
@@ -102,16 +110,68 @@ private fun NotificationBar(
 }
 
 @Composable
-fun AppRoot() {
+fun ApplicationScope.RommDeckApplication() {
+    val queue = remember { SessionDownloadQueue() }
+    val confirm = remember { ConfirmController() }
+    var showQuitConfirm by remember { mutableStateOf(false) }
+    val scale = uiScale()
+    val screen = try {
+        Toolkit.getDefaultToolkit().screenSize
+    } catch (_: Exception) {
+        null
+    }
+    val width = (BASE_WIDTH * scale).coerceAtMost((screen?.width ?: Int.MAX_VALUE).toFloat())
+    val height = (BASE_HEIGHT * scale).coerceAtMost((screen?.height ?: Int.MAX_VALUE).toFloat())
+
+    Window(
+        onCloseRequest = {
+            if (queue.hasActiveWork) showQuitConfirm = true
+            else exitApplication()
+        },
+        title = "RommDeck",
+        icon = rememberAppIconPainter(),
+        state = rememberWindowState(width = width.dp, height = height.dp),
+    ) {
+        Box(Modifier.fillMaxSize()) {
+            AppRoot(queue = queue, confirm = confirm)
+            ConfirmHost(confirm)
+            if (showQuitConfirm) {
+                RdConfirmDialog(
+                    request = ConfirmRequest(
+                        title = "Active transfers",
+                        message = "RommDeck still has work in progress.",
+                        detail = queue.quitConfirmDetail(),
+                        confirmLabel = "Quit anyway",
+                        cancelLabel = "Stay",
+                        tone = ConfirmTone.WARNING,
+                    ),
+                    onConfirm = {
+                        showQuitConfirm = false
+                        exitApplication()
+                    },
+                    onCancel = { showQuitConfirm = false },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun AppRoot(
+    queue: SessionDownloadQueue,
+    confirm: ConfirmController,
+) {
     val repo = remember { createConfigRepository() }
     var config by remember { mutableStateOf(repo.load()) }
     val paths = remember(config.playTarget) { resolvePlayPaths(config.playTarget) }
-    val queue = remember { SessionDownloadQueue() }
+    val appScope = rememberCoroutineScope()
     var tab by remember { mutableStateOf(NavTab.LIBRARY) }
     var stats by remember { mutableStateOf(loadLibraryStats()) }
     var totalRoms by remember { mutableStateOf(0) }
     var daemon by remember { mutableStateOf(readDaemonStatus()) }
     var notice by remember { mutableStateOf<AppNotice?>(null) }
+    var libraryBusy by remember { mutableStateOf(false) }
+    var libraryBusyKind by remember { mutableStateOf<LibraryBusyKind?>(null) }
 
     fun showNotice(message: String, tone: NotificationTone = NotificationTone.Ok) {
         notice = AppNotice(message, tone)
@@ -191,6 +251,14 @@ fun AppRoot() {
                                             config = config,
                                             paths = paths,
                                             queue = queue,
+                                            confirm = confirm,
+                                            appScope = appScope,
+                                            busy = libraryBusy,
+                                            busyKind = libraryBusyKind,
+                                            onBusyChange = { busy, kind ->
+                                                libraryBusy = busy
+                                                libraryBusyKind = kind
+                                            },
                                             onNotice = onNotice,
                                             onStatsChanged = { stats = loadLibraryStats() },
                                         )

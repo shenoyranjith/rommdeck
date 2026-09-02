@@ -66,7 +66,7 @@ fun DownloadsScreen(queue: SessionDownloadQueue, onOpenLibrary: () -> Unit) {
             )
             RdPanel(modifier = Modifier.weight(1f).fillMaxWidth()) {
                 LazyColumn(Modifier.fillMaxWidth()) {
-                    items(queue.jobs.asReversed(), key = { it.rom.id }) { job ->
+                    items(queue.displayJobs, key = { it.rom.id }) { job ->
                         val tone = when (job.status) {
                             DownloadJobStatus.QUEUED -> BadgeTone.WARN
                             DownloadJobStatus.RUNNING -> BadgeTone.ACCENT
