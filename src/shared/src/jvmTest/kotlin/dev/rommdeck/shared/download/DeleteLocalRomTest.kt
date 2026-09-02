@@ -8,6 +8,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlinx.coroutines.runBlocking
 import java.nio.file.Files
 
 class DeleteLocalRomTest {
@@ -26,7 +27,7 @@ class DeleteLocalRomTest {
         Files.write(path, byteArrayOf(1, 2, 3))
         index.upsertFile(sample(path = path.toString()))
 
-        val result = deleteLocalRom(index, 10)
+        val result = runBlocking { deleteLocalRom(index, 10) }
 
         assertTrue(result.fullyRemoved)
         assertEquals(1, result.filesRemoved)
@@ -39,7 +40,7 @@ class DeleteLocalRomTest {
         val path = tempDir.resolve("gone.sfc").toString()
         index.upsertFile(sample(path = path))
 
-        val result = deleteLocalRom(index, 10)
+        val result = runBlocking { deleteLocalRom(index, 10) }
 
         assertTrue(result.fullyRemoved)
         assertEquals(1, result.filesMissing)

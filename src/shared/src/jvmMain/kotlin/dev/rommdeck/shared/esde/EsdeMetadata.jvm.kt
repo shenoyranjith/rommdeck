@@ -1,6 +1,5 @@
 package dev.rommdeck.shared.esde
 
-import kotlinx.coroutines.runBlocking
 import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.ensureActive
 import dev.rommdeck.shared.log.log
@@ -84,7 +83,7 @@ suspend fun syncEsdeMetadata(
     )
 }
 
-fun removeEsdeMetadata(
+suspend fun removeEsdeMetadata(
     esdeHomePath: String,
     downloadedMediaPath: String,
     esdeFolder: String,
@@ -92,11 +91,10 @@ fun removeEsdeMetadata(
 ): RemoveEsdeMetadataResult {
     val layout = resolveEsdeLayout(esdeHomePath, downloadedMediaPath)
     val gamelistPath = gamelistFilePath(layout.gamelistsRoot, esdeFolder)
+    coroutineContext.ensureActive()
     val mediaRemoved = removeRomMedia(layout.mediaRoot, esdeFolder, primaryFilename)
-    val gamelistRemoved = runBlocking {
-        GamelistWriteQueue.run(gamelistPath) {
-            removeGamelistGameFromDisk(gamelistPath, primaryFilename)
-        }
+    val gamelistRemoved = GamelistWriteQueue.run(gamelistPath) {
+        removeGamelistGameFromDisk(gamelistPath, primaryFilename)
     }
     log.info(
         "esde",

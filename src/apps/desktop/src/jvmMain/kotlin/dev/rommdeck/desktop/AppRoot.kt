@@ -59,6 +59,7 @@ import java.awt.Toolkit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private val ShellInset = 20.dp
@@ -112,8 +113,11 @@ private fun NotificationBar(
 @Composable
 fun ApplicationScope.RommDeckApplication() {
     val queue = remember { SessionDownloadQueue() }
+    val activity = remember { AppActivityState() }
     val confirm = remember { ConfirmController() }
+    val appScope = rememberCoroutineScope()
     var showQuitConfirm by remember { mutableStateOf(false) }
+    var quitting by remember { mutableStateOf(false) }
     val scale = uiScale()
     val screen = try {
         Toolkit.getDefaultToolkit().screenSize
@@ -125,11 +129,15 @@ fun ApplicationScope.RommDeckApplication() {
 
     Window(
         onCloseRequest = {
-            if (queue.hasActiveWork) {
+            if (quitting) return@Window
+            if (shouldConfirmQuit(queue, activity)) {
                 showQuitConfirm = true
             } else {
-                queue.flushPersistedQueue()
-                exitApplication()
+                appScope.launch {
+                    performAppQuit(queue, activity)
+                    quitting = true
+                    exitApplication()
+                }
             }
         },
         title = "RommDeck",
@@ -137,22 +145,25 @@ fun ApplicationScope.RommDeckApplication() {
         state = rememberWindowState(width = width.dp, height = height.dp),
     ) {
         Box(Modifier.fillMaxSize()) {
-            AppRoot(queue = queue, confirm = confirm)
+            AppRoot(queue = queue, confirm = confirm, activity = activity)
             ConfirmHost(confirm)
             if (showQuitConfirm) {
                 RdConfirmDialog(
                     request = ConfirmRequest(
-                        title = "Active transfers",
+                        title = quitConfirmTitle(queue, activity),
                         message = "RommDeck still has work in progress.",
-                        detail = queue.quitConfirmDetail(),
+                        detail = quitConfirmDetail(queue, activity),
                         confirmLabel = "Quit anyway",
                         cancelLabel = "Stay",
                         tone = ConfirmTone.WARNING,
                     ),
                     onConfirm = {
-                        queue.flushPersistedQueue()
                         showQuitConfirm = false
-                        exitApplication()
+                        appScope.launch {
+                            performAppQuit(queue, activity)
+                            quitting = true
+                            exitApplication()
+                        }
                     },
                     onCancel = { showQuitConfirm = false },
                 )
@@ -165,6 +176,7 @@ fun ApplicationScope.RommDeckApplication() {
 fun AppRoot(
     queue: SessionDownloadQueue,
     confirm: ConfirmController,
+    activity: AppActivityState,
 ) {
     val repo = remember { createConfigRepository() }
     var config by remember { mutableStateOf(repo.load()) }
@@ -175,8 +187,6 @@ fun AppRoot(
     var totalRoms by remember { mutableStateOf(0) }
     var daemon by remember { mutableStateOf(readDaemonStatus()) }
     var notice by remember { mutableStateOf<AppNotice?>(null) }
-    var libraryBusy by remember { mutableStateOf(false) }
-    var libraryBusyKind by remember { mutableStateOf<LibraryBusyKind?>(null) }
 
     fun showNotice(message: String, tone: NotificationTone = NotificationTone.Ok) {
         notice = AppNotice(message, tone)
@@ -265,11 +275,10 @@ fun AppRoot(
                                             queue = queue,
                                             confirm = confirm,
                                             appScope = appScope,
-                                            busy = libraryBusy,
-                                            busyKind = libraryBusyKind,
-                                            onBusyChange = { busy, kind ->
-                                                libraryBusy = busy
-                                                libraryBusyKind = kind
+                                            busy = activity.libraryBusy,
+                                            busyKind = activity.libraryBusyKind,
+                                            onBusyChange = { busy, kind, job ->
+                                                activity.updateLibraryBusy(busy, kind, job)
                                             },
                                             onNotice = onNotice,
                                             onStatsChanged = { stats = loadLibraryStats() },

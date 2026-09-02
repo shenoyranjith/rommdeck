@@ -165,7 +165,7 @@ data class DeleteLocalResult(
     val fullyRemoved: Boolean get() = filesFailed.isEmpty()
 }
 
-fun deleteLocalRom(
+suspend fun deleteLocalRom(
     index: LibraryIndex,
     romId: Int,
     esde: DeleteEsdeOptions? = null,

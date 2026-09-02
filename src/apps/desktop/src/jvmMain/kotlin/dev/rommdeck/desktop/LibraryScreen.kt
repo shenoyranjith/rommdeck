@@ -64,9 +64,12 @@ import dev.rommdeck.shared.romm.coverUrlFor
 import dev.rommdeck.shared.romm.platformIconUrl
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.coroutineContext
 
 enum class LibraryBusyKind { PLATFORM, DOWNLOAD, DELETE }
 
@@ -79,7 +82,7 @@ fun LibraryScreen(
     appScope: CoroutineScope,
     busy: Boolean,
     busyKind: LibraryBusyKind?,
-    onBusyChange: (Boolean, LibraryBusyKind?) -> Unit,
+    onBusyChange: (Boolean, LibraryBusyKind?, Job?) -> Unit,
     onNotice: OnNotice,
     onStatsChanged: () -> Unit,
 ) {
@@ -493,24 +496,29 @@ fun LibraryScreen(
     fun deleteRomWithConfirm(rom: RommRom) {
         scope.launch {
             if (!confirm.confirmDeleteLocal("Delete local files for \"${rom.name}\"?")) return@launch
-            val result = withContext(Dispatchers.IO) {
-                val index = openLibraryIndex()
-                try {
-                    deleteLocalRom(index, rom.id, deleteEsdeOptions())
-                } finally {
-                    index.close()
+            onBusyChange(true, LibraryBusyKind.DELETE, coroutineContext[Job])
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    val index = openLibraryIndex()
+                    try {
+                        deleteLocalRom(index, rom.id, deleteEsdeOptions())
+                    } finally {
+                        index.close()
+                    }
                 }
+                if (!result.fullyRemoved) {
+                    onNotice(
+                        "Could not delete ${result.filesFailed.size} file(s) — close other apps using them and retry",
+                        NotificationTone.Err,
+                    )
+                    return@launch
+                }
+                handleRomDeleted(rom.id)
+                onStatsChanged()
+                onNotice("Removed local files")
+            } finally {
+                onBusyChange(false, null, null)
             }
-            if (!result.fullyRemoved) {
-                onNotice(
-                    "Could not delete ${result.filesFailed.size} file(s) — close other apps using them and retry",
-                    NotificationTone.Err,
-                )
-                return@launch
-            }
-            handleRomDeleted(rom.id)
-            onStatsChanged()
-            onNotice("Removed local files")
         }
     }
 
@@ -547,8 +555,8 @@ fun LibraryScreen(
                             onNotice("Set RomM URL and a ROM folder in Settings")
                             return@RdButton
                         }
-                        onBusyChange(true, LibraryBusyKind.DOWNLOAD)
                         appScope.launch {
+                            onBusyChange(true, LibraryBusyKind.DOWNLOAD, coroutineContext[Job])
                             try {
                                 val toQueue = if (selectAll) {
                                     when (filter) {
@@ -578,7 +586,7 @@ fun LibraryScreen(
                             } catch (e: Exception) {
                                 onNotice(e.message ?: e.toString(), NotificationTone.Err)
                             } finally {
-                                onBusyChange(false, null)
+                                onBusyChange(false, null, null)
                             }
                         }
                     },
@@ -624,14 +632,19 @@ fun LibraryScreen(
                             }
                             val countLabel = if (ids.size == 1) "1 ROM" else "${ids.size} ROMs"
                             if (!confirm.confirmDeleteLocal("Delete local files for $countLabel?")) return@launch
-                            onBusyChange(true, LibraryBusyKind.DELETE)
+                            onBusyChange(true, LibraryBusyKind.DELETE, coroutineContext[Job])
                             try {
                                 val (clearedIds, filesFailed) = withContext(Dispatchers.IO) {
                                     val index = openLibraryIndex()
                                     try {
                                         val failed = mutableListOf<String>()
                                         ids.forEach { romId ->
-                                            failed += deleteLocalRom(index, romId, deleteEsdeOptions()).filesFailed
+                                            coroutineContext.ensureActive()
+                                            failed += deleteLocalRom(
+                                                index,
+                                                romId,
+                                                deleteEsdeOptions(),
+                                            ).filesFailed
                                         }
                                         val cleared = ids.filter { index.getByRomId(it).isEmpty() }
                                         cleared to failed
@@ -666,7 +679,7 @@ fun LibraryScreen(
                             } catch (e: Exception) {
                                 onNotice(e.message ?: e.toString(), NotificationTone.Err)
                             } finally {
-                                onBusyChange(false, null)
+                                onBusyChange(false, null, null)
                             }
                         }
                     },
@@ -686,8 +699,8 @@ fun LibraryScreen(
                         onNotice("Set RomM URL and a ROM folder in Settings")
                         return@RdButton
                     }
-                    onBusyChange(true, LibraryBusyKind.PLATFORM)
                     appScope.launch {
+                        onBusyChange(true, LibraryBusyKind.PLATFORM, coroutineContext[Job])
                         try {
                             val have = withContext(Dispatchers.IO) { loadDownloadedIds() }
                             val missing = mutableListOf<RommRom>()
@@ -715,7 +728,7 @@ fun LibraryScreen(
                         } catch (e: Exception) {
                             onNotice(e.message ?: e.toString(), NotificationTone.Err)
                         } finally {
-                            onBusyChange(false, null)
+                            onBusyChange(false, null, null)
                         }
                     }
                 },

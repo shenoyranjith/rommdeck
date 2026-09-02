@@ -21,8 +21,10 @@ import dev.rommdeck.shared.play.ResolvedPlayPaths
 import dev.rommdeck.shared.romm.RommRom
 import dev.rommdeck.shared.romm.createRommClient
 import dev.rommdeck.shared.romm.downloadTotalBytes
-import dev.rommdeck.shared.romm.contentFilenames
+import dev.rommdeck.shared.esde.isGamelistWriteActive
+import dev.rommdeck.shared.esde.shutdownGamelistWrites
 import dev.rommdeck.shared.io.currentTimeIso
+import dev.rommdeck.shared.romm.contentFilenames
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -81,7 +83,19 @@ class SessionDownloadQueue {
             it.status == DownloadJobStatus.QUEUED ||
                 it.status == DownloadJobStatus.RUNNING ||
                 it.status == DownloadJobStatus.METADATA
-        }
+        } || isGamelistWriteActive()
+
+    suspend fun prepareForShutdown() {
+        flushPersistedQueue()
+        jobs.filter {
+            it.status == DownloadJobStatus.QUEUED ||
+                it.status == DownloadJobStatus.RUNNING ||
+                it.status == DownloadJobStatus.METADATA
+        }.forEach { cancelRom(it.rom.id) }
+        metadataJobs.values.forEach { it.cancel() }
+        activeDownload?.cancel()
+        shutdownGamelistWrites()
+    }
 
     val displayJobs: List<DownloadJob>
         get() {

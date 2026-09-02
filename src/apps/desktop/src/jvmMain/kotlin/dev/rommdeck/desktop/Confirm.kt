@@ -176,12 +176,3 @@ suspend fun ConfirmController.confirmDeleteLocal(message: String): Boolean = ask
     ),
 )
 
-fun SessionDownloadQueue.quitConfirmDetail(): String {
-    val parts = buildList {
-        if (runningCount > 0) add("$runningCount downloading")
-        if (queuedCount > 0) add("$queuedCount queued")
-        if (metadataCount > 0) add("$metadataCount writing metadata")
-    }
-    val summary = if (parts.isEmpty()) "transfers in progress" else parts.joinToString(" · ")
-    return "$summary\n\nQuit anyway? Your queue will be saved and resumed next launch. ROM files already on disk are kept. Incomplete downloads and metadata may need to be retried."
-}
