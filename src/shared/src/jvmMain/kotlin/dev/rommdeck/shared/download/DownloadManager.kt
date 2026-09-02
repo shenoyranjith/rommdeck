@@ -12,6 +12,10 @@ import dev.rommdeck.shared.platform.rommSlugToEsdeFolder
 import dev.rommdeck.shared.romm.RommClient
 import dev.rommdeck.shared.romm.RommRom
 import dev.rommdeck.shared.romm.contentFilenames
+import java.io.IOException
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.attribute.FileTime
 import java.time.Instant
 
 data class DownloadManagerConfig(
@@ -74,13 +78,81 @@ class DownloadManager(
     }
 }
 
-fun deleteLocalRom(index: LibraryIndex, romId: Int): Int {
-    val rows = index.deleteByRomId(romId)
+data class DeleteLocalResult(
+    val filesRemoved: Int,
+    val filesMissing: Int,
+    val filesFailed: List<String>,
+) {
+    val fullyRemoved: Boolean get() = filesFailed.isEmpty()
+}
+
+fun deleteLocalRom(index: LibraryIndex, romId: Int): DeleteLocalResult {
+    val rows = index.getByRomId(romId)
+    if (rows.isEmpty()) return DeleteLocalResult(filesRemoved = 0, filesMissing = 0, filesFailed = emptyList())
+
     var removed = 0
+    var missing = 0
+    val failed = mutableListOf<String>()
+    val touchedDirs = mutableSetOf<Path>()
+
     for (row in rows) {
-        val file = java.io.File(row.path)
-        if (file.isFile && file.delete()) removed++
+        val path = Path.of(row.path)
+        path.parent?.let { touchedDirs.add(it) }
+
+        if (!Files.exists(path)) {
+            missing++
+            index.deleteByPath(row.path)
+            continue
+        }
+        if (deletePathWithRetry(path) && deletePathWithRetry(Path.of("${row.path}.part"))) {
+            removed++
+            index.deleteByPath(row.path)
+        } else {
+            failed += row.path
+        }
     }
-    log.info("download", "deleted local", mapOf("romId" to romId, "removed" to removed))
-    return removed
+
+    touchedDirs.forEach(::notifyDirectoryChanged)
+
+    log.info(
+        "download",
+        "deleted local",
+        mapOf(
+            "romId" to romId,
+            "removed" to removed,
+            "missing" to missing,
+            "failed" to failed.size,
+        ),
+    )
+    return DeleteLocalResult(filesRemoved = removed, filesMissing = missing, filesFailed = failed)
+}
+
+private fun deletePathWithRetry(path: Path, attempts: Int = 5): Boolean {
+    if (!Files.exists(path)) return true
+    repeat(attempts) { attempt ->
+        try {
+            Files.delete(path)
+            return true
+        } catch (e: IOException) {
+            if (attempt == attempts - 1) {
+                log.warn(
+                    "download",
+                    "failed to delete file",
+                    mapOf("path" to path.toString(), "error" to (e.message ?: e.toString())),
+                )
+                return false
+            }
+            Thread.sleep(50L * (attempt + 1))
+        }
+    }
+    return false
+}
+
+private fun notifyDirectoryChanged(dir: Path) {
+    try {
+        if (Files.isDirectory(dir)) {
+            Files.setLastModifiedTime(dir, FileTime.from(Instant.now()))
+        }
+    } catch (_: IOException) {
+    }
 }

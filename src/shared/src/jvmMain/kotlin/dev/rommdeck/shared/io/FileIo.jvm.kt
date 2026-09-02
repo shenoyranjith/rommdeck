@@ -78,16 +78,20 @@ actual suspend fun writeFileFromChannel(
     val dest = File(path)
     dest.parentFile?.mkdirs()
     val part = File("${path}.part")
-    part.outputStream().use { out ->
-        val buffer = ByteArray(64 * 1024)
-        var total = 0L
-        while (!channel.isClosedForRead) {
-            val n = channel.readAvailable(buffer, 0, buffer.size)
-            if (n <= 0) break
-            out.write(buffer, 0, n)
-            total += n
-            onProgress(total)
+    try {
+        part.outputStream().use { out ->
+            val buffer = ByteArray(64 * 1024)
+            var total = 0L
+            while (!channel.isClosedForRead) {
+                val n = channel.readAvailable(buffer, 0, buffer.size)
+                if (n <= 0) break
+                out.write(buffer, 0, n)
+                total += n
+                onProgress(total)
+            }
         }
+        Files.move(part.toPath(), dest.toPath(), StandardCopyOption.REPLACE_EXISTING)
+    } finally {
+        channel.cancel(null)
     }
-    Files.move(part.toPath(), dest.toPath(), StandardCopyOption.REPLACE_EXISTING)
 }

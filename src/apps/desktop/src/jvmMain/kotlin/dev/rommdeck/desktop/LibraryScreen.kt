@@ -437,13 +437,20 @@ fun LibraryScreen(
     fun deleteRomWithConfirm(rom: RommRom) {
         scope.launch {
             if (!confirm.confirmDeleteLocal("Delete local files for \"${rom.name}\"?")) return@launch
-            withContext(Dispatchers.IO) {
+            val result = withContext(Dispatchers.IO) {
                 val index = openLibraryIndex()
                 try {
                     deleteLocalRom(index, rom.id)
                 } finally {
                     index.close()
                 }
+            }
+            if (!result.fullyRemoved) {
+                onNotice(
+                    "Could not delete ${result.filesFailed.size} file(s) — close other apps using them and retry",
+                    NotificationTone.Err,
+                )
+                return@launch
             }
             handleRomDeleted(rom.id)
             onStatsChanged()
@@ -563,25 +570,38 @@ fun LibraryScreen(
                             if (!confirm.confirmDeleteLocal("Delete local files for $countLabel?")) return@launch
                             onBusyChange(true, LibraryBusyKind.DELETE)
                             try {
-                                withContext(Dispatchers.IO) {
+                                val (clearedIds, filesFailed) = withContext(Dispatchers.IO) {
                                     val index = openLibraryIndex()
                                     try {
-                                        ids.forEach { deleteLocalRom(index, it) }
+                                        val failed = mutableListOf<String>()
+                                        ids.forEach { romId ->
+                                            failed += deleteLocalRom(index, romId).filesFailed
+                                        }
+                                        val cleared = ids.filter { index.getByRomId(it).isEmpty() }
+                                        cleared to failed
                                     } finally {
                                         index.close()
                                     }
                                 }
                                 onStatsChanged()
-                                onNotice("Removed local copies of ${ids.size} ROM(s)")
+                                if (filesFailed.isEmpty()) {
+                                    onNotice("Removed local copies of ${ids.size} ROM(s)")
+                                } else {
+                                    onNotice(
+                                        "Removed ${clearedIds.size} of ${ids.size} ROM(s); " +
+                                            "${filesFailed.size} file(s) could not be deleted",
+                                        NotificationTone.Err,
+                                    )
+                                }
                                 withContext(Dispatchers.Main) {
                                     runWhenComposed {
-                                        val removed = ids.filter { it in downloadedIds }
-                                        downloadedIds = downloadedIds - removed.toSet()
-                                        downloadedTotal = maxOf(0, downloadedTotal - removed.size)
+                                        downloadedIds = downloadedIds - clearedIds.toSet()
+                                        downloadedTotal = maxOf(0, downloadedTotal - clearedIds.size)
                                         if (filter == RomFilter.DOWNLOADED) {
-                                            downloadedRoms = downloadedRoms.filter { it.id !in removed }
+                                            downloadedRoms = downloadedRoms.filter { it.id !in clearedIds }
                                             if (search.isNotBlank()) {
-                                                downloadedSearchTotal = maxOf(0, downloadedSearchTotal - removed.size)
+                                                downloadedSearchTotal =
+                                                    maxOf(0, downloadedSearchTotal - clearedIds.size)
                                             }
                                         }
                                         exitSelectMode()
