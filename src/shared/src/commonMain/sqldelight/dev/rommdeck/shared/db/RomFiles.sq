@@ -1,4 +1,4 @@
--- Matches packages/core/src/db (migrations 001 + 002).
+-- Rom library index (rom_id, esde folder, local filename).
 CREATE TABLE IF NOT EXISTS rom_files (
   id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   rom_id INTEGER NOT NULL,

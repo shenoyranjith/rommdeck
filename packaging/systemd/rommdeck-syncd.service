@@ -8,9 +8,6 @@ Type=simple
 ExecStart=%h/.local/bin/rommdeck-syncd
 Restart=on-failure
 RestartSec=10
-Environment=NODE_ENV=production
-# Optional: Environment=ROMMDECK_PROFILE=prod
-
 StandardOutput=journal
 StandardError=journal
 

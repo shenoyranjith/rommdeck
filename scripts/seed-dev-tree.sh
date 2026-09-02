@@ -58,4 +58,4 @@ else
 fi
 
 echo "Dev tree ready at $ROOT"
-echo "Run with: npm run dev:gui"
+echo "Run from repo: cd src && ./run-desktop.sh"

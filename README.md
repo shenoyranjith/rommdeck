@@ -1,10 +1,12 @@
 # RommDeck
 
-**Browse your RomM library, download into RetroDECK, and sync saves in the background.**
+**Browse your RomM library, download into ES-DE, and sync saves in the background.**
 
-RommDeck is a Linux desktop app that connects **[RomM](https://github.com/rommapp/romm)** (your self-hosted library) with **[RetroDECK](https://retrodeck.net/)** (your local emulation environment). Download ROMs to the right folders, populate ES-DE with metadata and artwork from RomM, and keep battery saves and save states synced across devices—even when the app is closed.
+RommDeck is a **cross-platform** app that connects **[RomM](https://github.com/rommapp/romm)** (your self-hosted library) to **[ES-DE](https://www.es-de.org/)** (EmulationStation Desktop Edition) on your machine. Download ROMs into the right ES-DE folders, write gamelist metadata and artwork from RomM, and keep battery saves and save states synced across devices—even when the app is closed.
 
-Built with Electron, React, and TypeScript. RomM 5.x and RetroDECK on Linux.
+**[RetroDECK](https://retrodeck.net/)** is a fully supported ES-DE distribution (auto-detected on Linux). Plain ES-DE installs and other platforms are on the roadmap.
+
+Built with **Kotlin Multiplatform** and **Compose**. Targets **RomM 5.x**. **v0.1.0** ships a **Linux desktop** app; Android and additional desktop OSes are planned.
 
 ---
 
@@ -13,34 +15,37 @@ Built with Electron, React, and TypeScript. RomM 5.x and RetroDECK on Linux.
 ### Library and downloads
 
 - **Browse by platform** — paginated ROM lists with cover art from RomM
+- **Grid and list views** — preference saved across restarts
 - **Search** — find games across your library
 - **Single, bulk, and platform downloads** — queue one game, a selection, or everything on a platform
 - **Download queue** — active and failed sections, progress, cancel, retry, dismiss; persists across restarts
-- **Downloaded badges** — live updates in the library and status bar when jobs complete
+- **Downloaded badges** — live updates in the library and sidebar when jobs complete
 - **Local delete** — remove ROM files, index entries, and matching ES-DE gamelist/media
 
 ### ES-DE integration
 
 - **Automatic metadata** — on each download, write `gamelist.xml` from RomM (title, description, genre, release date, developer, publisher, …)
 - **Artwork** — covers, screenshots, and videos into ES-DE’s `downloaded_media` tree when RomM has them
-- **No re-scraping** — games show up in RetroDECK ready to play
+- **No re-scraping** — games show up in ES-DE ready to play
+- **Platform map** — map RomM platform slugs to your ES-DE folder names
 
 ### Save and state sync
 
 - **RomM Device Sync Protocol** — negotiate, upload/download, complete session ([docs](https://docs.romm.app/5.1.0/developers/device-sync-protocol/))
-- **Sync Now** — manual sync from the GUI
-- **Background daemon** — `rommdeck-syncd` as a systemd user service: interval poll, startup sync, filesystem watch on save folders
-- **One-click enable** — Settings installs and starts the daemon; no manual unit setup in normal use
-- **Battery saves and save states** — RetroArch paths on RetroDECK-default platforms (`.srm`, `.state`, `.state0`–`.state9`, …)
+- **Sync Now** — manual sync from the app
+- **Background daemon** — `rommdeck-syncd` (Linux: systemd user service) — interval poll, startup sync, filesystem watch on save folders
+- **One-click enable** — Settings installs and starts the daemon on Linux; no manual unit setup in normal use
+- **Battery saves and save states** — RetroArch-style paths under your ES-DE save/state roots (`.srm`, `.state`, `.state0`–`.state9`, …)
+- **Two-way, download-only, and upload-only** — directional sync enforced locally; RomM device registration uses supported API modes
 - **Conflict policies** — `keep_both`, `server_wins`, or `device_wins`; same policy for manual and auto sync
 - **Multi-device** — register as a RomM sync device; slot-based sync across machines
 
 ### Settings and polish
 
-- **RetroDECK auto-detection** — reads Flatpak `retrodeck.json` for ROM, save, and state paths
+- **Target paths** — ROM, save, and state folders for your ES-DE layout; RetroDECK auto-detection on Linux when installed
 - **Platform map editor** — override RomM slug → ES-DE folder mappings when your library layout differs
 - **Themes** — candy, gold, vector, mint with optional CRT scanline overlay
-- **Structured logging** — configurable debug/info/warn/error; open the log file from Settings
+- **Structured logging** — configurable debug/info/warn/error
 - **Arcade-style shell** — sidebar navigation, accent frame, custom window controls
 
 ---
@@ -50,35 +55,41 @@ Built with Electron, React, and TypeScript. RomM 5.x and RetroDECK on Linux.
 ```mermaid
 flowchart LR
   subgraph app [RommDeck]
-    GUI[Electron GUI]
+    Client[Compose app]
     Syncd[rommdeck-syncd]
-    Core[Shared core]
+    Shared[shared library]
   end
   RomM[(RomM)]
-  RD[(RetroDECK)]
+  ESDE[(ES-DE)]
 
-  GUI --> Core
-  Syncd --> Core
-  Core --> RomM
-  Core --> RD
+  Client --> Shared
+  Syncd --> Shared
+  Shared --> RomM
+  Shared --> ESDE
 ```
 
 | Piece | What it does |
 | --- | --- |
-| **GUI** | Library, downloads, sync controls, settings |
-| **Core** | RomM client, download manager, SQLite index, ES-DE writer, sync engine |
-| **Daemon** | Runs sync on a timer and when save files change |
+| **App** | Library, downloads, sync controls, settings |
+| **Shared library** | RomM client, download manager, SQLite index, ES-DE writer, sync engine |
+| **Daemon** | Background save/state sync (Linux today) |
 
-Config and state live in standard XDG paths (`~/.config/rommdeck/`, `~/.local/share/rommdeck/`). GUI and daemon share one config file and one library database.
+Config and state use standard paths on each platform (Linux: `~/.config/rommdeck/`, `~/.local/share/rommdeck/`). The app and daemon share one config file and one library database.
 
 ---
 
 ## Requirements
 
-- Linux with **RetroDECK** (Flatpak)
-- **Node.js 20+** (for building from source)
+### Runtime (using v0.1.0)
+
+- **Linux** desktop (macOS and Windows planned)
+- An **ES-DE** ROM library — **[RetroDECK](https://retrodeck.net/)** (Flatpak) is the tested path on Linux; manual ROM/save/state paths work via Settings → Target
 - **RomM 5.x** reachable from your machine
 - RomM **Client API Token** with library, asset, and device scopes ([details](#romm-api-token))
+
+### Building from source
+
+- **JDK 17–25** with a **full (non-headless)** AWT install for the GUI — on Fedora: `sudo dnf install java-25-openjdk`
 
 ---
 
@@ -86,16 +97,20 @@ Config and state live in standard XDG paths (`~/.config/rommdeck/`, `~/.local/sh
 
 ```bash
 git clone https://github.com/shenoyranjith/rommdeck.git
-cd rommdeck
-npm install
-npm run build:core
-npm run dev:gui
+cd rommdeck/src
+./run-desktop.sh
+```
+
+For UI work with Compose Hot Reload (save Kotlin files → UI updates without a full restart):
+
+```bash
+./run-desktop-hot.sh
 ```
 
 1. Open **Settings → RomM** — set your RomM URL and API token, test connection.
-2. Confirm **Settings → Retrodeck** paths (auto-detected from RetroDECK).
-3. Browse the **Library**, download a game, check it appears in RetroDECK.
-4. Optional: **Settings → Auto-sync → Enable** for background save sync.
+2. Open **Settings → Target** — confirm ROM, save, and state paths (RetroDECK auto-detected on Linux when present).
+3. Browse the **Library**, download a game, check it appears in ES-DE.
+4. Optional: **Settings → Auto-sync → Enable** for background save sync (Linux; installs and starts `rommdeck-syncd`).
 
 ### RomM on another host
 
@@ -104,13 +119,17 @@ ssh -L 8080:localhost:8080 user@romm-host
 # use http://127.0.0.1:8080 as romm.baseUrl
 ```
 
-### Native module note
+### Headless JDK / no display
 
-The GUI and sync daemon use separate `better-sqlite3` builds (Electron vs system Node). If the GUI reports `NODE_MODULE_VERSION` after running tests:
+Compose Desktop needs a real display and `libawt_xawt.so`. From the repo’s `src/` directory:
 
 ```bash
-npm run rebuild:electron
+./check-display.sh
+export DISPLAY=:0   # if needed in an IDE terminal
+./run-desktop.sh
 ```
+
+See [`src/README.md`](src/README.md) for troubleshooting display issues and development workflows.
 
 ---
 
@@ -128,7 +147,7 @@ Create in RomM → **Administration → Client API Tokens**.
 
 ## Save sync in brief
 
-RommDeck discovers saves under RetroDECK’s default RetroArch layout:
+RommDeck discovers saves under your configured ES-DE save/state roots, using the default RetroArch layout:
 
 ```text
 {saves_path}/{platform}/{game_basename}.srm
@@ -143,38 +162,56 @@ Sync runs when you click **Sync Now**, on a schedule (default 5 min), and after 
 
 ## Configuration
 
-`~/.config/rommdeck/config.json` — shared by GUI and daemon. See `fixtures/config.example.json`.
+`~/.config/rommdeck/config.json` — shared by the app and daemon. See `fixtures/config.example.json`. The `retrodeck` key in JSON holds **Target** paths (ROM, save, state) for any ES-DE layout.
 
 | Setting | Default | Notes |
 | --- | --- | --- |
+| `retrodeck.*Path` | auto or manual | ES-DE ROM / save / state folders (Settings → Target) |
 | `sync.enabled` | `false` | Toggle via Settings → Auto-sync |
+| `sync.mode` | `push_pull` | Or `pull_only` (download only), `push_only` (upload only) |
 | `sync.intervalSeconds` | `300` | Background poll interval |
 | `sync.debounceSeconds` | `45` | Delay after save write before sync |
 | `sync.conflictPolicy` | `keep_both` | Or `server_wins`, `device_wins` |
+| `ui.libraryViewMode` | `grid` | Or `list` |
+| `ui.theme` | `candy` | candy, gold, vector, mint |
 | `logging.level` | `info` | `debug`, `info`, `warn`, `error` |
 
 Override config/data dirs: `ROMMDECK_CONFIG_DIR`, `ROMMDECK_DATA_DIR`.
+
+RomM or auto-sync settings changes restart a running `rommdeck-syncd` so path and interval updates take effect.
 
 ---
 
 ## Development
 
+All application code lives under [`src/`](src/). Developer guide: [`src/README.md`](src/README.md).
+
 ```
-packages/core/     RomM client, downloads, sync, SQLite, ES-DE
-packages/gui/      Electron + React UI
-packages/syncd/    Background sync CLI
-packaging/systemd/ systemd unit template
+src/
+  shared/          KMP library — RomM, downloads, sync, SQLite, ES-DE
+  apps/desktop/    Compose Desktop app (Linux today; KMP-ready for more OSes)
+  apps/syncd/      Background sync daemon (JVM)
+  apps/android/    Android stub (v0.2.0)
 data/              Platform and emulator slug maps
+packaging/systemd/ systemd user unit template (Linux)
 ```
 
 | Command | Purpose |
 | --- | --- |
-| `npm run dev:gui` | Development GUI |
-| `npm run dev:syncd` | Run daemon without systemd |
-| `npm run build` | Production build (core + syncd + GUI) |
-| `npm run install:syncd` | Install daemon + systemd unit |
-| `npm run test:core` | Unit tests |
-| `npm run typecheck` | Typecheck all packages |
+| `./run-desktop.sh` | Run the desktop app |
+| `./run-desktop-hot.sh` | Run with Compose Hot Reload |
+| `./gradlew :apps:syncd:installDist` | Build sync daemon install tree |
+| `./gradlew :shared:jvmTest` | Unit tests |
+| `./gradlew build` | Build desktop, syncd, and shared |
+| `bash ../scripts/seed-dev-tree.sh` | Seed a local ES-DE folder tree + sample config (from `src/`) |
+
+After changing sync daemon code, rebuild and redeploy the installed sidecar (or toggle auto-sync off/on in Settings):
+
+```bash
+./gradlew :apps:syncd:installDist
+rsync -a --delete apps/syncd/build/install/rommdeck-syncd/ ~/.local/share/rommdeck/syncd/
+systemctl --user restart rommdeck-syncd.service
+```
 
 Roadmap and design notes: [`RommDeck-plan.md`](RommDeck-plan.md).
 
@@ -182,13 +219,13 @@ Roadmap and design notes: [`RommDeck-plan.md`](RommDeck-plan.md).
 
 ## Limitations
 
-RommDeck does not upload ROMs to RomM, launch games, pick RetroArch cores, or sync standalone-emulator saves in v1. Bulk unattended ROM downloads and Flatpak packaging are out of scope for now.
+RommDeck does not upload ROMs to RomM, launch games, or pick RetroArch cores. **v0.1.0** ships the **Linux desktop** app with RetroDECK auto-detection; standalone-emulator save paths, macOS/Windows desktop builds, Android, and installable packages are planned for **v0.2.0**.
 
 ---
 
 ## Acknowledgments
 
-- **[Tender (romm-tender)](https://github.com/danielcopper/romm-tender)** by [danielcopper](https://github.com/danielcopper) — reference for understanding RomM’s Device Sync Protocol and save/state sync behavior. RommDeck targets RetroDECK on Linux desktop; it is not affiliated with Tender and does not share its codebase.
+- **[Tender (romm-tender)](https://github.com/danielcopper/romm-tender)** by [danielcopper](https://github.com/danielcopper) — reference for understanding RomM’s Device Sync Protocol and save/state sync behavior. RommDeck is an independent ES-DE companion and is not affiliated with Tender.
 
 ---
 

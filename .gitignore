@@ -1,19 +1,15 @@
 node_modules/
-dist/
-dist-electron/
 out/
 *.tsbuildinfo
 .DS_Store
 *.log
 .env
 .env.local
-packages/gui/release/
 coverage/
-.vite/
 *.db
 *.db-journal
 
-# Kotlin / Gradle (src/ rewrite)
+# Kotlin / Gradle
 src/.gradle/
 src/**/build/
 src/.kotlin/
