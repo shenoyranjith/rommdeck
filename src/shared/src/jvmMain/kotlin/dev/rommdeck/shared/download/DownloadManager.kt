@@ -98,6 +98,27 @@ class DownloadManager(
     }
 }
 
+/** Remove in-progress `.part` files for a ROM (e.g. after cancel). */
+fun cleanupPartialDownloadFiles(
+    rom: RommRom,
+    romsPath: String,
+    platformMapOverrides: Map<String, String> = emptyMap(),
+) {
+    val slug = rom.platformSlug ?: return
+    for (filename in rom.contentFilenames()) {
+        val dest = downloadTargetPath(romsPath, slug, filename, platformMapOverrides)
+        deletePathQuietly(Path.of("$dest.part"))
+    }
+}
+
+private fun deletePathQuietly(path: Path) {
+    if (!Files.exists(path)) return
+    try {
+        Files.delete(path)
+    } catch (_: IOException) {
+    }
+}
+
 data class DeleteLocalResult(
     val filesRemoved: Int,
     val filesMissing: Int,

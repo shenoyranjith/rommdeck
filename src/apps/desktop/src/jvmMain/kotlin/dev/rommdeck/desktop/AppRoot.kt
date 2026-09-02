@@ -125,8 +125,12 @@ fun ApplicationScope.RommDeckApplication() {
 
     Window(
         onCloseRequest = {
-            if (queue.hasActiveWork) showQuitConfirm = true
-            else exitApplication()
+            if (queue.hasActiveWork) {
+                showQuitConfirm = true
+            } else {
+                queue.flushPersistedQueue()
+                exitApplication()
+            }
         },
         title = "RommDeck",
         icon = rememberAppIconPainter(),
@@ -146,6 +150,7 @@ fun ApplicationScope.RommDeckApplication() {
                         tone = ConfirmTone.WARNING,
                     ),
                     onConfirm = {
+                        queue.flushPersistedQueue()
                         showQuitConfirm = false
                         exitApplication()
                     },
@@ -187,6 +192,12 @@ fun AppRoot(
         val active = notice ?: return@LaunchedEffect
         delay(if (active.tone == NotificationTone.Err) 5_500 else 3_500)
         if (notice == active) notice = null
+    }
+
+    LaunchedEffect(config, paths) {
+        queue.restorePersistedQueue(config, paths) {
+            stats = loadLibraryStats()
+        }
     }
 
     LaunchedEffect(config.romm.baseUrl, config.romm.apiToken) {

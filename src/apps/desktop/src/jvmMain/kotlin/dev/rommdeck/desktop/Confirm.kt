@@ -183,5 +183,5 @@ fun SessionDownloadQueue.quitConfirmDetail(): String {
         if (metadataCount > 0) add("$metadataCount writing metadata")
     }
     val summary = if (parts.isEmpty()) "transfers in progress" else parts.joinToString(" · ")
-    return "$summary\n\nQuit anyway? ROM files already on disk are kept. Incomplete downloads and metadata may need to be retried."
+    return "$summary\n\nQuit anyway? Your queue will be saved and resumed next launch. ROM files already on disk are kept. Incomplete downloads and metadata may need to be retried."
 }

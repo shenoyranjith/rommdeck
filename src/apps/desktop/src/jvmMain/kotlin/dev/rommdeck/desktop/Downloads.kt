@@ -9,10 +9,20 @@ import dev.rommdeck.shared.db.LibraryStats
 import dev.rommdeck.shared.db.openLibraryIndex
 import dev.rommdeck.shared.download.DownloadManager
 import dev.rommdeck.shared.download.DownloadManagerConfig
+import dev.rommdeck.shared.download.PersistedActiveEntry
+import dev.rommdeck.shared.download.PersistedDownloadQueue
+import dev.rommdeck.shared.download.PersistedFailedEntry
+import dev.rommdeck.shared.download.cleanupPartialDownloadFiles
+import dev.rommdeck.shared.download.clearPersistedDownloadQueue
+import dev.rommdeck.shared.download.loadPersistedDownloadQueue
+import dev.rommdeck.shared.download.savePersistedDownloadQueue
+import dev.rommdeck.shared.db.LibraryIndex
 import dev.rommdeck.shared.play.ResolvedPlayPaths
 import dev.rommdeck.shared.romm.RommRom
 import dev.rommdeck.shared.romm.createRommClient
 import dev.rommdeck.shared.romm.downloadTotalBytes
+import dev.rommdeck.shared.romm.contentFilenames
+import dev.rommdeck.shared.io.currentTimeIso
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -28,6 +38,7 @@ import kotlin.coroutines.coroutineContext
 internal const val CatalogPageSize = 100
 private const val ProgressUpdateIntervalMs = 50L
 private const val MinRunningDisplayMs = 500L
+private const val PersistDebounceMs = 500L
 
 enum class DownloadJobStatus { QUEUED, RUNNING, METADATA, DONE, FAILED }
 
@@ -45,6 +56,8 @@ class SessionDownloadQueue {
     private var activeRomId: Int? = null
     private var activeDownload: Job? = null
     private val metadataJobs = mutableMapOf<Int, Job>()
+    private var persistJob: Job? = null
+    private var restored = false
     private var lastProgressUpdateMs = 0L
     private var runningStartedAtMs = 0L
 
@@ -85,18 +98,39 @@ class SessionDownloadQueue {
         }
 
     fun enqueue(roms: List<RommRom>): Int {
-        val existing = jobs.map { it.rom.id }.toSet()
-        val add = roms.filter { it.id !in existing }.map { rom ->
-            DownloadJob(rom, DownloadJobStatus.QUEUED, totalBytes = rom.downloadTotalBytes())
+        if (roms.isEmpty()) return 0
+        val updated = jobs.toMutableList()
+        var count = 0
+        for (rom in roms) {
+            val failedIndex = updated.indexOfFirst {
+                it.rom.id == rom.id && it.status == DownloadJobStatus.FAILED
+            }
+            if (failedIndex >= 0) {
+                updated[failedIndex] = DownloadJob(
+                    rom = rom,
+                    status = DownloadJobStatus.QUEUED,
+                    totalBytes = rom.downloadTotalBytes(),
+                )
+                cancelledRomIds.remove(rom.id)
+                count++
+                continue
+            }
+            if (updated.any { it.rom.id == rom.id }) continue
+            updated += DownloadJob(
+                rom = rom,
+                status = DownloadJobStatus.QUEUED,
+                totalBytes = rom.downloadTotalBytes(),
+            )
+            count++
         }
-        if (add.isEmpty()) return 0
-        jobs = jobs + add
-        return add.size
+        if (count == 0) return 0
+        commitJobs(updated)
+        return count
     }
 
     fun cancelRom(romId: Int) {
         cancelledRomIds.add(romId)
-        jobs = jobs.filterNot { it.rom.id == romId && it.status == DownloadJobStatus.QUEUED }
+        commitJobs(jobs.filterNot { it.rom.id == romId && it.status == DownloadJobStatus.QUEUED })
         metadataJobs[romId]?.cancel()
         if (activeRomId == romId) {
             activeDownload?.cancel()
@@ -128,12 +162,13 @@ class SessionDownloadQueue {
 
     fun retryAllFailed(): Int {
         var count = 0
-        jobs = jobs.map { job ->
+        val updated = jobs.map { job ->
             if (job.status != DownloadJobStatus.FAILED) return@map job
             cancelledRomIds.remove(job.rom.id)
             count++
             job.copy(status = DownloadJobStatus.QUEUED, error = null, progressBytes = 0)
         }
+        if (count > 0) commitJobs(updated)
         return count
     }
 
@@ -156,9 +191,136 @@ class SessionDownloadQueue {
         }
     }
 
+    suspend fun restorePersistedQueue(
+        config: RommDeckConfig,
+        paths: ResolvedPlayPaths,
+        onDone: () -> Unit,
+    ) {
+        if (restored) return
+        restored = true
+
+        val data = loadPersistedDownloadQueue() ?: return
+        val restoredJobs = mutableListOf<DownloadJob>()
+        val metadataRomIds = mutableListOf<Int>()
+
+        for (failed in data.failed) {
+            if (restoredJobs.any { it.rom.id == failed.rom.id }) continue
+            restoredJobs += DownloadJob(
+                rom = failed.rom,
+                status = DownloadJobStatus.FAILED,
+                error = failed.error ?: "Failed before last exit",
+                totalBytes = failed.totalBytes ?: failed.rom.downloadTotalBytes(),
+            )
+        }
+
+        val library = openLibraryIndex()
+        try {
+            for (entry in data.active) {
+                if (restoredJobs.any { it.rom.id == entry.rom.id }) continue
+                val totalBytes = entry.totalBytes ?: entry.rom.downloadTotalBytes()
+                val filesComplete = romFilesComplete(library, entry.rom)
+                val wantsMetadata = needsMetadata(config, paths)
+                when {
+                    (entry.phase == "metadata" || filesComplete) && wantsMetadata -> {
+                        restoredJobs += DownloadJob(
+                            rom = entry.rom,
+                            status = DownloadJobStatus.METADATA,
+                            progressBytes = totalBytes ?: entry.progressBytes,
+                            totalBytes = totalBytes,
+                        )
+                        metadataRomIds += entry.rom.id
+                    }
+                    else -> {
+                        restoredJobs += DownloadJob(
+                            rom = entry.rom,
+                            status = DownloadJobStatus.QUEUED,
+                            totalBytes = totalBytes,
+                        )
+                    }
+                }
+            }
+        } finally {
+            library.close()
+        }
+
+        if (restoredJobs.isEmpty()) {
+            clearPersistedDownloadQueue()
+            return
+        }
+
+        commitJobs(restoredJobs, persist = false)
+        metadataRomIds.forEach { scheduleMetadata(it, config, paths, onDone) }
+        if (restoredJobs.any { it.status == DownloadJobStatus.QUEUED }) {
+            pump(config, paths, onDone)
+        }
+    }
+
+    fun flushPersistedQueue() {
+        persistJob?.cancel()
+        persistJob = null
+        writePersistedSnapshot()
+    }
+
     private fun removeJob(romId: Int) {
         cancelledRomIds.remove(romId)
-        jobs = jobs.filter { it.rom.id != romId }
+        commitJobs(jobs.filter { it.rom.id != romId })
+    }
+
+    private fun romFilesComplete(index: LibraryIndex, rom: RommRom): Boolean {
+        val filenames = rom.contentFilenames()
+        if (filenames.isEmpty()) return false
+        val rows = index.getByRomId(rom.id)
+        if (rows.isEmpty()) return false
+        return filenames.all { filename ->
+            val row = rows.find { it.filename == filename }
+            row != null && java.io.File(row.path).exists()
+        }
+    }
+
+    private fun commitJobs(newJobs: List<DownloadJob>, persist: Boolean = true) {
+        jobs = newJobs
+        if (persist) schedulePersist()
+    }
+
+    private fun schedulePersist() {
+        persistJob?.cancel()
+        persistJob = workerScope.launch {
+            delay(PersistDebounceMs)
+            writePersistedSnapshot()
+        }
+    }
+
+    private fun writePersistedSnapshot() {
+        val active = jobs.filter {
+            it.status == DownloadJobStatus.QUEUED ||
+                it.status == DownloadJobStatus.RUNNING ||
+                it.status == DownloadJobStatus.METADATA
+        }.map { job ->
+            PersistedActiveEntry(
+                phase = if (job.status == DownloadJobStatus.METADATA) "metadata" else "download",
+                rom = job.rom,
+                totalBytes = job.totalBytes,
+                progressBytes = job.progressBytes,
+            )
+        }
+        val failed = jobs.filter { it.status == DownloadJobStatus.FAILED }.map { job ->
+            PersistedFailedEntry(
+                rom = job.rom,
+                error = job.error,
+                totalBytes = job.totalBytes,
+            )
+        }
+        if (active.isEmpty() && failed.isEmpty()) {
+            clearPersistedDownloadQueue()
+            return
+        }
+        savePersistedDownloadQueue(
+            PersistedDownloadQueue(
+                savedAt = currentTimeIso(),
+                active = active,
+                failed = failed,
+            ),
+        )
     }
 
     private fun managerConfig(paths: ResolvedPlayPaths, config: RommDeckConfig) = DownloadManagerConfig(
@@ -304,6 +466,11 @@ class SessionDownloadQueue {
                         onDone()
                     }
                 } catch (_: CancellationException) {
+                    cleanupPartialDownloadFiles(
+                        job.rom,
+                        paths.romsPath,
+                        config.platformMapOverrides,
+                    )
                     removeJob(job.rom.id)
                 } catch (e: Exception) {
                     if (job.rom.id in cancelledRomIds) {
@@ -331,7 +498,7 @@ class SessionDownloadQueue {
     }
 
     private fun setAt(index: Int, job: DownloadJob) {
-        jobs = jobs.toMutableList().also { it[index] = job }
+        commitJobs(jobs.toMutableList().also { it[index] = job })
     }
 }
 
