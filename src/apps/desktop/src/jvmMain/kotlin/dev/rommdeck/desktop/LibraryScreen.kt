@@ -284,8 +284,8 @@ fun LibraryScreen(
         }
     }
 
-    LaunchedEffect(queue.doneCount) {
-        if (queue.doneCount == 0) return@LaunchedEffect
+    LaunchedEffect(queue.completionCount) {
+        if (queue.completionCount == 0) return@LaunchedEffect
         downloadedIds = withContext(Dispatchers.IO) { loadDownloadedIds() }
         selected?.slug?.let { slug ->
             downloadedTotal = withContext(Dispatchers.IO) { loadDownloadedCountForSlug(slug) }

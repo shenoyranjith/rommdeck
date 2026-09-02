@@ -262,7 +262,15 @@ fun AppRoot(
                                             onNotice = onNotice,
                                             onStatsChanged = { stats = loadLibraryStats() },
                                         )
-                                        NavTab.DOWNLOADS -> DownloadsScreen(queue) { tab = NavTab.LIBRARY }
+                                        NavTab.DOWNLOADS -> DownloadsScreen(
+                                            queue = queue,
+                                            onOpenLibrary = { tab = NavTab.LIBRARY },
+                                            onStartPump = {
+                                                queue.startPump(config, paths) {
+                                                    stats = loadLibraryStats()
+                                                }
+                                            },
+                                        )
                                         NavTab.SYNC -> SyncScreen(
                                             config = config,
                                             paths = paths,

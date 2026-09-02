@@ -12,13 +12,16 @@ import dev.rommdeck.shared.download.DownloadManagerConfig
 import dev.rommdeck.shared.play.ResolvedPlayPaths
 import dev.rommdeck.shared.romm.RommRom
 import dev.rommdeck.shared.romm.createRommClient
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.coroutineContext
 
 internal const val CatalogPageSize = 100
 
@@ -33,6 +36,9 @@ data class DownloadJob(
 
 class SessionDownloadQueue {
     private val workerScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private val cancelledRomIds = mutableSetOf<Int>()
+    private var activeRomId: Int? = null
+    private var activeDownload: Job? = null
 
     var jobs by mutableStateOf(listOf<DownloadJob>())
         private set
@@ -42,7 +48,10 @@ class SessionDownloadQueue {
     val queuedCount: Int get() = jobs.count { it.status == DownloadJobStatus.QUEUED }
     val runningCount: Int get() = jobs.count { it.status == DownloadJobStatus.RUNNING }
     val failedCount: Int get() = jobs.count { it.status == DownloadJobStatus.FAILED }
-    val doneCount: Int get() = jobs.count { it.status == DownloadJobStatus.DONE }
+
+    /** Increments when a download completes successfully (used to refresh library state). */
+    var completionCount by mutableStateOf(0)
+        private set
 
     val hasActiveWork: Boolean
         get() = jobs.any { it.status == DownloadJobStatus.QUEUED || it.status == DownloadJobStatus.RUNNING }
@@ -56,6 +65,7 @@ class SessionDownloadQueue {
                 DownloadJobStatus.DONE -> 3
             }
             return jobs.withIndex()
+                .filter { it.value.status != DownloadJobStatus.DONE }
                 .sortedWith(compareBy({ rank(it.value.status) }, { it.index }))
                 .map { it.value }
         }
@@ -68,10 +78,68 @@ class SessionDownloadQueue {
         return add.size
     }
 
+    fun cancelRom(romId: Int) {
+        cancelledRomIds.add(romId)
+        jobs = jobs.filterNot { it.rom.id == romId && it.status == DownloadJobStatus.QUEUED }
+        if (activeRomId == romId) {
+            activeDownload?.cancel()
+        }
+    }
+
+    fun cancelAll() {
+        jobs.filter {
+            it.status == DownloadJobStatus.QUEUED || it.status == DownloadJobStatus.RUNNING
+        }.forEach { cancelRom(it.rom.id) }
+    }
+
+    fun retryRom(romId: Int): Boolean {
+        val index = jobs.indexOfFirst { it.rom.id == romId && it.status == DownloadJobStatus.FAILED }
+        if (index < 0) return false
+        cancelledRomIds.remove(romId)
+        setAt(
+            index,
+            jobs[index].copy(
+                status = DownloadJobStatus.QUEUED,
+                error = null,
+                progressBytes = 0,
+            ),
+        )
+        return true
+    }
+
+    fun retryAllFailed(): Int {
+        var count = 0
+        jobs = jobs.map { job ->
+            if (job.status != DownloadJobStatus.FAILED) return@map job
+            cancelledRomIds.remove(job.rom.id)
+            count++
+            job.copy(status = DownloadJobStatus.QUEUED, error = null, progressBytes = 0)
+        }
+        return count
+    }
+
+    fun removeFailedRom(romId: Int): Boolean {
+        val index = jobs.indexOfFirst { it.rom.id == romId && it.status == DownloadJobStatus.FAILED }
+        if (index < 0) return false
+        removeJob(romId)
+        return true
+    }
+
+    fun removeAllFailed(): Int {
+        val failedIds = jobs.filter { it.status == DownloadJobStatus.FAILED }.map { it.rom.id }
+        failedIds.forEach { removeJob(it) }
+        return failedIds.size
+    }
+
     fun startPump(config: RommDeckConfig, paths: ResolvedPlayPaths, onDone: () -> Unit) {
         workerScope.launch {
             pump(config, paths, onDone)
         }
+    }
+
+    private fun removeJob(romId: Int) {
+        cancelledRomIds.remove(romId)
+        jobs = jobs.filter { it.rom.id != romId }
     }
 
     suspend fun pump(config: RommDeckConfig, paths: ResolvedPlayPaths, onDone: () -> Unit) {
@@ -82,38 +150,69 @@ class SessionDownloadQueue {
                 val index = jobs.indexOfFirst { it.status == DownloadJobStatus.QUEUED }
                 if (index < 0) break
                 val job = jobs[index]
+                if (job.rom.id in cancelledRomIds) {
+                    removeJob(job.rom.id)
+                    continue
+                }
                 setAt(index, job.copy(status = DownloadJobStatus.RUNNING))
+                activeRomId = job.rom.id
                 try {
                     withContext(Dispatchers.IO) {
-                        val client = createRommClient(config.romm)
-                        val library = openLibraryIndex()
-                        try {
-                            DownloadManager(
-                                client = client,
-                                index = library,
-                                config = DownloadManagerConfig(
-                                    romsPath = paths.romsPath,
-                                    esdeHomePath = paths.esdeHomePath,
-                                    downloadedMediaPath = paths.downloadedMediaPath,
-                                    platformMapOverrides = config.platformMapOverrides,
-                                    syncMetadataOnDownload = config.playTarget.syncMetadataOnDownload,
-                                ),
-                            ).downloadRom(job.rom)
-                        } finally {
-                            client.close()
-                            library.close()
+                        if (simulateDownloadFailures()) {
+                            error("Simulated download failure (ROMMDECK_SIMULATE_DOWNLOAD_FAILURES)")
+                        }
+                        coroutineScope {
+                            activeDownload = coroutineContext[Job]
+                            val client = createRommClient(config.romm)
+                            val library = openLibraryIndex()
+                            try {
+                                DownloadManager(
+                                    client = client,
+                                    index = library,
+                                    config = DownloadManagerConfig(
+                                        romsPath = paths.romsPath,
+                                        esdeHomePath = paths.esdeHomePath,
+                                        downloadedMediaPath = paths.downloadedMediaPath,
+                                        platformMapOverrides = config.platformMapOverrides,
+                                        syncMetadataOnDownload = config.playTarget.syncMetadataOnDownload,
+                                    ),
+                                ).downloadRom(job.rom)
+                            } finally {
+                                client.close()
+                                library.close()
+                            }
                         }
                     }
-                    setAt(index, jobs[index].copy(status = DownloadJobStatus.DONE))
-                    onDone()
+                    if (job.rom.id in cancelledRomIds) {
+                        removeJob(job.rom.id)
+                        continue
+                    }
+                    val doneIndex = jobs.indexOfFirst { it.rom.id == job.rom.id }
+                    if (doneIndex >= 0) {
+                        removeJob(job.rom.id)
+                        completionCount++
+                        onDone()
+                    }
+                } catch (_: CancellationException) {
+                    removeJob(job.rom.id)
                 } catch (e: Exception) {
-                    setAt(
-                        index,
-                        jobs[index].copy(
-                            status = DownloadJobStatus.FAILED,
-                            error = e.message ?: e.toString(),
-                        ),
-                    )
+                    if (job.rom.id in cancelledRomIds) {
+                        removeJob(job.rom.id)
+                    } else {
+                        val failIndex = jobs.indexOfFirst { it.rom.id == job.rom.id }
+                        if (failIndex >= 0) {
+                            setAt(
+                                failIndex,
+                                jobs[failIndex].copy(
+                                    status = DownloadJobStatus.FAILED,
+                                    error = e.message ?: e.toString(),
+                                ),
+                            )
+                        }
+                    }
+                } finally {
+                    activeRomId = null
+                    activeDownload = null
                 }
             }
         } finally {
@@ -124,6 +223,11 @@ class SessionDownloadQueue {
     private fun setAt(index: Int, job: DownloadJob) {
         jobs = jobs.toMutableList().also { it[index] = job }
     }
+}
+
+private fun simulateDownloadFailures(): Boolean {
+    val flag = System.getenv("ROMMDECK_SIMULATE_DOWNLOAD_FAILURES")?.trim()?.lowercase()
+    return flag == "1" || flag == "true" || flag == "yes"
 }
 
 fun loadLibraryStats(): LibraryStats {

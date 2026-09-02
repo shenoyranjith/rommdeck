@@ -88,6 +88,9 @@ afterEvaluate {
                 System.getenv("ROMMDECK_UI_SCALE")?.takeIf { it.isNotBlank() }?.let {
                     environment("ROMMDECK_UI_SCALE", it)
                 }
+                System.getenv("ROMMDECK_SIMULATE_DOWNLOAD_FAILURES")?.takeIf { it.isNotBlank() }?.let {
+                    environment("ROMMDECK_SIMULATE_DOWNLOAD_FAILURES", it)
+                }
             }
             jvmArgs("-Djava.awt.headless=false")
         }
