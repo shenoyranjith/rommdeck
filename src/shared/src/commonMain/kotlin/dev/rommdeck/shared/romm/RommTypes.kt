@@ -20,6 +20,8 @@ data class RommPlatform(
 data class RommRomFile(
     @SerialName("file_name") val fileName: String,
     @SerialName("file_size_bytes") val fileSizeBytes: Long? = null,
+    @SerialName("sha1_hash") val sha1Hash: String? = null,
+    @SerialName("md5_hash") val md5Hash: String? = null,
 )
 
 @Serializable
@@ -55,6 +57,8 @@ data class RommRom(
     @SerialName("launchbox_metadata") val launchboxMetadata: RommMetadatum? = null,
     @SerialName("generated_first_release_date") val generatedFirstReleaseDate: Long? = null,
     @SerialName("generated_player_count") val generatedPlayerCount: String? = null,
+    @SerialName("sha1_hash") val sha1Hash: String? = null,
+    @SerialName("md5_hash") val md5Hash: String? = null,
 )
 
 fun RommRom.contentFilenames(): List<String> {

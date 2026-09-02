@@ -39,6 +39,9 @@ fun DownloadsScreen(
     val c = Rd
     val listState = rememberLazyListState()
     val hasActive = queue.queuedCount > 0 || queue.runningCount > 0 || queue.metadataCount > 0
+    val activeJobs = queue.activeDisplayJobs
+    val failedJobs = queue.failedDisplayJobs
+    val isEmpty = activeJobs.isEmpty() && failedJobs.isEmpty()
 
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         RdPageHeader(
@@ -49,7 +52,7 @@ fun DownloadsScreen(
                 "View and manage your download queue."
             },
         )
-        if (queue.displayJobs.isEmpty()) {
+        if (isEmpty) {
             Column(
                 Modifier.weight(1f).fillMaxWidth(),
                 verticalArrangement = Arrangement.Center,
@@ -99,7 +102,7 @@ fun DownloadsScreen(
                             append("${queue.failedCount} failed")
                         }
                     },
-                    color = c.accent,
+                    color = if (queue.failedCount > 0 && !hasActive) c.danger else c.accent,
                     style = RdType.mono.copy(fontSize = 12.sp),
                     modifier = Modifier.weight(1f),
                 )
@@ -132,17 +135,39 @@ fun DownloadsScreen(
                         contentPadding = PaddingValues(bottom = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        items(queue.displayJobs, key = { it.rom.id }) { job ->
-                            DownloadJobRow(
-                                job = job,
-                                rommBaseUrl = rommBaseUrl,
-                                apiToken = apiToken,
-                                onCancel = { queue.cancelRom(job.rom.id) },
-                                onRetry = {
-                                    if (queue.retryRom(job.rom.id)) onStartPump()
-                                },
-                                onRemove = { queue.removeFailedRom(job.rom.id) },
-                            )
+                        if (activeJobs.isNotEmpty()) {
+                            item(key = "section-active") {
+                                DownloadSectionHeader("Active", c.accent)
+                            }
+                            items(activeJobs, key = { "active-${it.rom.id}" }) { job ->
+                                DownloadJobRow(
+                                    job = job,
+                                    rommBaseUrl = rommBaseUrl,
+                                    apiToken = apiToken,
+                                    onCancel = { queue.cancelRom(job.rom.id) },
+                                    onRetry = {
+                                        if (queue.retryRom(job.rom.id)) onStartPump()
+                                    },
+                                    onRemove = { queue.removeFailedRom(job.rom.id) },
+                                )
+                            }
+                        }
+                        if (failedJobs.isNotEmpty()) {
+                            item(key = "section-failed") {
+                                DownloadSectionHeader("Failed", c.danger)
+                            }
+                            items(failedJobs, key = { "failed-${it.rom.id}" }) { job ->
+                                DownloadJobRow(
+                                    job = job,
+                                    rommBaseUrl = rommBaseUrl,
+                                    apiToken = apiToken,
+                                    onCancel = { queue.cancelRom(job.rom.id) },
+                                    onRetry = {
+                                        if (queue.retryRom(job.rom.id)) onStartPump()
+                                    },
+                                    onRemove = { queue.removeFailedRom(job.rom.id) },
+                                )
+                            }
                         }
                     }
                     RdVerticalScrollbar(
@@ -152,6 +177,24 @@ fun DownloadsScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun DownloadSectionHeader(label: String, color: androidx.compose.ui.graphics.Color) {
+    val c = Rd
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .border(1.dp, color.copy(alpha = 0.5f), RectangleShape)
+            .background(c.bg0.copy(alpha = 0.5f))
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+    ) {
+        Text(
+            label.uppercase(),
+            color = color,
+            style = RdType.micro.copy(letterSpacing = 1.4.sp),
+        )
     }
 }
 
@@ -200,10 +243,16 @@ private fun DownloadJobRow(
         job.status == DownloadJobStatus.METADATA
     val canRetry = job.status == DownloadJobStatus.FAILED
 
+    val isFailed = job.status == DownloadJobStatus.FAILED
+
     Row(
         Modifier
             .fillMaxWidth()
-            .border(1.dp, c.accent.copy(alpha = 0.4f), RectangleShape)
+            .border(
+                1.dp,
+                if (isFailed) c.danger.copy(alpha = 0.4f) else c.accent.copy(alpha = 0.4f),
+                RectangleShape,
+            )
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -269,7 +318,10 @@ private fun DownloadJobRow(
                 Text(job.error, color = c.danger, style = RdType.small, modifier = Modifier.padding(top = 4.dp))
             }
         }
-        RdBadge(job.status.name.lowercase(), tone)
+        RdBadge(
+            if (isFailed) "Failed" else job.status.name.lowercase().replaceFirstChar { it.titlecase() },
+            tone,
+        )
         if (canRetry) {
             RdButton(onClick = onRetry, primary = true, compact = true) {
                 Text("Retry", style = RdType.small)

@@ -51,32 +51,50 @@ class DownloadManager(
         log.info("download", "starting", mapOf("romId" to rom.id, "files" to filenames.size))
 
         var received = 0L
-        for (filename in filenames) {
-            val dest = downloadTargetPath(
-                config.romsPath,
-                slug,
-                filename,
-                config.platformMapOverrides,
-            )
-            client.downloadRomContent(rom.id, filename, dest) { fileBytes ->
-                onProgress(received + fileBytes)
+        val completedPaths = mutableListOf<String>()
+        try {
+            for (filename in filenames) {
+                val dest = downloadTargetPath(
+                    config.romsPath,
+                    slug,
+                    filename,
+                    config.platformMapOverrides,
+                )
+                deletePathQuietly(Path.of("$dest.part"))
+                client.downloadRomContent(rom.id, filename, dest) { fileBytes ->
+                    onProgress(received + fileBytes)
+                }
+                val hashResult = verifyRomFileHash(dest, expectedHashesForFile(rom, filename))
+                val file = java.io.File(dest)
+                received += if (file.exists()) file.length() else 0L
+                onProgress(received)
+                completedPaths += dest
+                index.upsertFile(
+                    IndexedRomFile(
+                        romId = rom.id,
+                        rommSlug = slug,
+                        esdeFolder = esdeFolder,
+                        filename = filename,
+                        size = if (file.exists()) file.length() else null,
+                        sha1 = hashResult.sha1,
+                        path = dest,
+                        downloadedAt = Instant.now().toString(),
+                        verified = hashResult.verified,
+                    ),
+                )
+                log.info(
+                    "download",
+                    "file verified",
+                    mapOf(
+                        "romId" to rom.id,
+                        "filename" to filename,
+                        "verified" to hashResult.verified,
+                    ),
+                )
             }
-            val file = java.io.File(dest)
-            received += if (file.exists()) file.length() else 0L
-            onProgress(received)
-            index.upsertFile(
-                IndexedRomFile(
-                    romId = rom.id,
-                    rommSlug = slug,
-                    esdeFolder = esdeFolder,
-                    filename = filename,
-                    size = if (file.exists()) file.length() else null,
-                    sha1 = null,
-                    path = dest,
-                    downloadedAt = Instant.now().toString(),
-                    verified = true,
-                ),
-            )
+        } catch (e: Exception) {
+            rollbackWrittenFiles(completedPaths)
+            throw e
         }
 
         log.info("download", "files complete", mapOf("romId" to rom.id))
@@ -116,6 +134,13 @@ private fun deletePathQuietly(path: Path) {
     try {
         Files.delete(path)
     } catch (_: IOException) {
+    }
+}
+
+private fun rollbackWrittenFiles(paths: List<String>) {
+    for (dest in paths) {
+        deletePathQuietly(Path.of(dest))
+        deletePathQuietly(Path.of("$dest.part"))
     }
 }
 

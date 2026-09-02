@@ -97,6 +97,12 @@ class SessionDownloadQueue {
                 .map { it.value }
         }
 
+    val activeDisplayJobs: List<DownloadJob>
+        get() = displayJobs.filter { it.status != DownloadJobStatus.FAILED }
+
+    val failedDisplayJobs: List<DownloadJob>
+        get() = displayJobs.filter { it.status == DownloadJobStatus.FAILED }
+
     fun enqueue(roms: List<RommRom>): Int {
         if (roms.isEmpty()) return 0
         val updated = jobs.toMutableList()
@@ -116,6 +122,7 @@ class SessionDownloadQueue {
                 continue
             }
             if (updated.any { it.rom.id == rom.id }) continue
+            cancelledRomIds.remove(rom.id)
             updated += DownloadJob(
                 rom = rom,
                 status = DownloadJobStatus.QUEUED,
@@ -129,11 +136,16 @@ class SessionDownloadQueue {
     }
 
     fun cancelRom(romId: Int) {
-        cancelledRomIds.add(romId)
-        commitJobs(jobs.filterNot { it.rom.id == romId && it.status == DownloadJobStatus.QUEUED })
-        metadataJobs[romId]?.cancel()
-        if (activeRomId == romId) {
-            activeDownload?.cancel()
+        when (jobs.firstOrNull { it.rom.id == romId }?.status) {
+            DownloadJobStatus.QUEUED -> removeJob(romId)
+            DownloadJobStatus.RUNNING, DownloadJobStatus.METADATA -> {
+                cancelledRomIds.add(romId)
+                metadataJobs[romId]?.cancel()
+                if (activeRomId == romId) {
+                    activeDownload?.cancel()
+                }
+            }
+            else -> Unit
         }
     }
 
