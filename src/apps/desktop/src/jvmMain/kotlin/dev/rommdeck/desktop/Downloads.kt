@@ -12,6 +12,7 @@ import dev.rommdeck.shared.download.DownloadManagerConfig
 import dev.rommdeck.shared.play.ResolvedPlayPaths
 import dev.rommdeck.shared.romm.RommRom
 import dev.rommdeck.shared.romm.createRommClient
+import dev.rommdeck.shared.romm.downloadTotalBytes
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -19,11 +20,14 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.coroutineContext
 
 internal const val CatalogPageSize = 100
+private const val ProgressUpdateIntervalMs = 50L
+private const val MinRunningDisplayMs = 500L
 
 enum class DownloadJobStatus { QUEUED, RUNNING, DONE, FAILED }
 
@@ -31,6 +35,7 @@ data class DownloadJob(
     val rom: RommRom,
     val status: DownloadJobStatus,
     val progressBytes: Long = 0,
+    val totalBytes: Long? = null,
     val error: String? = null,
 )
 
@@ -39,6 +44,8 @@ class SessionDownloadQueue {
     private val cancelledRomIds = mutableSetOf<Int>()
     private var activeRomId: Int? = null
     private var activeDownload: Job? = null
+    private var lastProgressUpdateMs = 0L
+    private var runningStartedAtMs = 0L
 
     var jobs by mutableStateOf(listOf<DownloadJob>())
         private set
@@ -72,7 +79,9 @@ class SessionDownloadQueue {
 
     fun enqueue(roms: List<RommRom>): Int {
         val existing = jobs.map { it.rom.id }.toSet()
-        val add = roms.filter { it.id !in existing }.map { DownloadJob(it, DownloadJobStatus.QUEUED) }
+        val add = roms.filter { it.id !in existing }.map { rom ->
+            DownloadJob(rom, DownloadJobStatus.QUEUED, totalBytes = rom.downloadTotalBytes())
+        }
         if (add.isEmpty()) return 0
         jobs = jobs + add
         return add.size
@@ -142,6 +151,31 @@ class SessionDownloadQueue {
         jobs = jobs.filter { it.rom.id != romId }
     }
 
+    private fun updateProgress(romId: Int, bytes: Long, force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (!force && now - lastProgressUpdateMs < ProgressUpdateIntervalMs) return
+        lastProgressUpdateMs = now
+        val index = jobs.indexOfFirst { it.rom.id == romId && it.status == DownloadJobStatus.RUNNING }
+        if (index < 0) return
+        val current = jobs[index]
+        if (current.progressBytes == bytes) return
+        setAt(index, current.copy(progressBytes = bytes))
+    }
+
+    private fun reportDownloadProgress(romId: Int, bytes: Long) {
+        workerScope.launch(Dispatchers.Main.immediate) {
+            updateProgress(romId, bytes)
+        }
+    }
+
+    private suspend fun finishRunningJob(romId: Int, totalBytes: Long?) {
+        updateProgress(romId, totalBytes ?: 0L, force = true)
+        val elapsed = System.currentTimeMillis() - runningStartedAtMs
+        if (elapsed < MinRunningDisplayMs) {
+            delay(MinRunningDisplayMs - elapsed)
+        }
+    }
+
     suspend fun pump(config: RommDeckConfig, paths: ResolvedPlayPaths, onDone: () -> Unit) {
         if (pumping) return
         pumping = true
@@ -154,13 +188,12 @@ class SessionDownloadQueue {
                     removeJob(job.rom.id)
                     continue
                 }
-                setAt(index, job.copy(status = DownloadJobStatus.RUNNING))
+                setAt(index, job.copy(status = DownloadJobStatus.RUNNING, progressBytes = 0))
                 activeRomId = job.rom.id
+                runningStartedAtMs = System.currentTimeMillis()
+                val romId = job.rom.id
                 try {
                     withContext(Dispatchers.IO) {
-                        if (simulateDownloadFailures()) {
-                            error("Simulated download failure (ROMMDECK_SIMULATE_DOWNLOAD_FAILURES)")
-                        }
                         coroutineScope {
                             activeDownload = coroutineContext[Job]
                             val client = createRommClient(config.romm)
@@ -176,13 +209,16 @@ class SessionDownloadQueue {
                                         platformMapOverrides = config.platformMapOverrides,
                                         syncMetadataOnDownload = config.playTarget.syncMetadataOnDownload,
                                     ),
-                                ).downloadRom(job.rom)
+                                ).downloadRom(job.rom) { bytes ->
+                                    reportDownloadProgress(romId, bytes)
+                                }
                             } finally {
                                 client.close()
                                 library.close()
                             }
                         }
                     }
+                    finishRunningJob(romId, job.totalBytes)
                     if (job.rom.id in cancelledRomIds) {
                         removeJob(job.rom.id)
                         continue
@@ -223,11 +259,6 @@ class SessionDownloadQueue {
     private fun setAt(index: Int, job: DownloadJob) {
         jobs = jobs.toMutableList().also { it[index] = job }
     }
-}
-
-private fun simulateDownloadFailures(): Boolean {
-    val flag = System.getenv("ROMMDECK_SIMULATE_DOWNLOAD_FAILURES")?.trim()?.lowercase()
-    return flag == "1" || flag == "true" || flag == "yes"
 }
 
 fun loadLibraryStats(): LibraryStats {

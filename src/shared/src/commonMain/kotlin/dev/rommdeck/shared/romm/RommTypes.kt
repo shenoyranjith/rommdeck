@@ -64,6 +64,13 @@ fun RommRom.contentFilenames(): List<String> {
     return if (!name.isNullOrBlank()) listOf(name) else emptyList()
 }
 
+/** Total bytes to download across all content files, when RomM provides sizes. */
+fun RommRom.downloadTotalBytes(): Long? {
+    fsSizeBytes?.takeIf { it > 0 }?.let { return it }
+    val fromFiles = files?.sumOf { it.fileSizeBytes ?: 0L } ?: 0L
+    return fromFiles.takeIf { it > 0 }
+}
+
 data class RommRomPage(
     val items: List<RommRom>,
     val total: Int,

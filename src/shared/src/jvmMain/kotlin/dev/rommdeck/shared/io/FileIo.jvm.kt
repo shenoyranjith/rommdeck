@@ -1,7 +1,7 @@
 package dev.rommdeck.shared.io
 
 import io.ktor.utils.io.ByteReadChannel
-import io.ktor.utils.io.readAvailable
+import io.ktor.utils.io.jvm.javaio.toInputStream
 import java.io.File
 import java.net.InetAddress
 import java.nio.file.Files
@@ -80,14 +80,16 @@ actual suspend fun writeFileFromChannel(
     val part = File("${path}.part")
     try {
         part.outputStream().use { out ->
-            val buffer = ByteArray(64 * 1024)
             var total = 0L
-            while (!channel.isClosedForRead) {
-                val n = channel.readAvailable(buffer, 0, buffer.size)
-                if (n <= 0) break
-                out.write(buffer, 0, n)
-                total += n
-                onProgress(total)
+            channel.toInputStream().use { input ->
+                val buffer = ByteArray(64 * 1024)
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read <= 0) break
+                    out.write(buffer, 0, read)
+                    total += read
+                    onProgress(total)
+                }
             }
         }
         Files.move(part.toPath(), dest.toPath(), StandardCopyOption.REPLACE_EXISTING)

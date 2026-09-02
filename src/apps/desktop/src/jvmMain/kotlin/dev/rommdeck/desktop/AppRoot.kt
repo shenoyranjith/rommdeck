@@ -264,6 +264,8 @@ fun AppRoot(
                                         )
                                         NavTab.DOWNLOADS -> DownloadsScreen(
                                             queue = queue,
+                                            rommBaseUrl = config.romm.baseUrl,
+                                            apiToken = config.romm.apiToken,
                                             onOpenLibrary = { tab = NavTab.LIBRARY },
                                             onStartPump = {
                                                 queue.startPump(config, paths) {

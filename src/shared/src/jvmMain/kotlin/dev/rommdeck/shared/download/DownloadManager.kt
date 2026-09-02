@@ -42,6 +42,7 @@ class DownloadManager(
         val esdeFolder = rommSlugToEsdeFolder(slug, config.platformMapOverrides)
         log.info("download", "starting", mapOf("romId" to rom.id, "files" to filenames.size))
 
+        var received = 0L
         for (filename in filenames) {
             val dest = downloadTargetPath(
                 config.romsPath,
@@ -49,8 +50,12 @@ class DownloadManager(
                 filename,
                 config.platformMapOverrides,
             )
-            client.downloadRomContent(rom.id, filename, dest, onProgress)
+            client.downloadRomContent(rom.id, filename, dest) { fileBytes ->
+                onProgress(received + fileBytes)
+            }
             val file = java.io.File(dest)
+            received += if (file.exists()) file.length() else 0L
+            onProgress(received)
             index.upsertFile(
                 IndexedRomFile(
                     romId = rom.id,
