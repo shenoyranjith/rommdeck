@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Seed a local RetroDECK-like tree for non-RetroDECK / offline development.
+# Seed a local RetroDECK-like library tree for offline / non-RetroDECK development.
+# Point Settings → Target at these folders (or use the written retrodeck.json).
 set -euo pipefail
 
 ROOT="${ROMMDECK_DEV_ROOT:-$HOME/rommdeck-dev/retrodeck}"
@@ -7,7 +8,7 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CFG_DIR="${ROMMDECK_CONFIG_DIR:-$HOME/.config/rommdeck}"
 
 mkdir -p "$ROOT"/{roms,saves,states}
-# Common ES-DE folders used while developing
+# Common library (ES-DE system) folders used while developing
 for folder in nes snes gb gba n64 gc megadrive psx psp dreamcast; do
   mkdir -p "$ROOT/roms/$folder"
 done
@@ -30,6 +31,7 @@ if [[ ! -f "$MAIN_CFG" ]]; then
     "romsPath": "$ROOT/roms",
     "savesPath": "$ROOT/saves",
     "statesPath": "$ROOT/states",
+    "esdeHomePath": "",
     "syncMetadataOnDownload": true
   },
   "sync": {

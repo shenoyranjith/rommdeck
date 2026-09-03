@@ -59,6 +59,7 @@ suspend fun ensureDevice(
 
     val device = client.registerDevice(
         name = deviceName,
+        // RomM device platform label; library sync uses ES-DE-shaped paths regardless of host stack.
         platform = "esde",
         hostname = hostname,
         syncMode = mode,

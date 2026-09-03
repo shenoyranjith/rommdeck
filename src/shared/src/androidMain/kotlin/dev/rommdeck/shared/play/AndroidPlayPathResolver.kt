@@ -8,7 +8,16 @@ actual fun resolvePlayPaths(playTarget: PlayTargetConfig): ResolvedPlayPaths =
         savesPath = playTarget.savesPath,
         statesPath = playTarget.statesPath,
         downloadedMediaPath = "",
-        esdeHomePath = "",
+        esdeHomePath = playTarget.esdeHomePath,
         retrodeckJsonPath = "",
-        source = PathSource.UNCONFIGURED,
+        source = if (
+            playTarget.romsPath.isBlank() &&
+            playTarget.savesPath.isBlank() &&
+            playTarget.statesPath.isBlank() &&
+            playTarget.esdeHomePath.isBlank()
+        ) {
+            PathSource.UNCONFIGURED
+        } else {
+            PathSource.MANUAL
+        },
     )

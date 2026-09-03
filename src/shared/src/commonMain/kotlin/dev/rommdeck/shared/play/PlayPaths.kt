@@ -1,13 +1,13 @@
 package dev.rommdeck.shared.play
 
 enum class PathSource {
-    /** Linux: retrodeck.json found and paths taken from it (with optional overrides). */
+    /** Supported platform: retrodeck.json found (optional path overrides). */
     RETRODECK_AUTO,
-    /** Plain ES-DE install detected; paths from ES-DE layout or config overrides. */
+    /** Best-effort ES-DE-style tree when RetroDECK is absent (not a first-class platform). */
     ESDE_AUTO,
-    /** User-set paths in config.json. */
+    /** User-set ROM / save / state paths (EmuDeck, plain ES-DE, custom, …). */
     MANUAL,
-    /** No RetroDECK / ES-DE detected and no manual paths. */
+    /** No RetroDECK detect and no manual paths. */
     UNCONFIGURED,
 }
 
@@ -16,7 +16,7 @@ data class ResolvedPlayPaths(
     val savesPath: String,
     val statesPath: String,
     val downloadedMediaPath: String,
-    /** ES-DE home (gamelists + media roots are derived from this). */
+    /** Frontend home for gamelists + media (ES-DE layout under the library root). */
     val esdeHomePath: String,
     val retrodeckJsonPath: String,
     val source: PathSource,

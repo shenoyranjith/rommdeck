@@ -58,6 +58,7 @@ internal fun mergeConfigPatch(current: RommDeckConfig, patch: RommDeckConfig): R
                 romsPath = patch.playTarget.romsPath.ifEmpty { current.playTarget.romsPath },
                 savesPath = patch.playTarget.savesPath.ifEmpty { current.playTarget.savesPath },
                 statesPath = patch.playTarget.statesPath.ifEmpty { current.playTarget.statesPath },
+                esdeHomePath = patch.playTarget.esdeHomePath.ifEmpty { current.playTarget.esdeHomePath },
                 syncMetadataOnDownload = patch.playTarget.syncMetadataOnDownload,
             ),
             sync = patch.sync.copy(

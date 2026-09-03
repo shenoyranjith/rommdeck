@@ -96,7 +96,7 @@ cat > "$APPDIR/rommdeck.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=RommDeck
-Comment=RomM ↔ ES-DE bridge
+Comment=RomM ↔ RetroDECK (ES-DE frontend)
 Exec=AppRun
 Icon=rommdeck
 Categories=Game;

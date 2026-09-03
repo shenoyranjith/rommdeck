@@ -19,7 +19,7 @@ class JvmPlayPathResolverTest {
 
     @Test
     fun expandHomeSubstitutesHomeVariable() {
-        val home = System.getProperty("user.home")
+        val home = System.getenv("HOME") ?: System.getProperty("user.home")
         assertEquals("$home/roms", expandHome("\${HOME}/roms"))
         assertEquals("$home/roms", expandHome("~/roms"))
     }
@@ -95,6 +95,38 @@ class JvmPlayPathResolverTest {
         assertEquals("${dir}/retrodeck/roms", resolved.romsPath)
         assertEquals(PathSource.RETRODECK_AUTO, resolved.source)
         assertEquals(rdJson.toString(), resolved.retrodeckJsonPath)
+    }
+
+    @Test
+    fun esdeHomeOverrideUsedWhenRomsAreOutsideFrontendTree() {
+        val dir = tempDir()
+        val esdeHome = dir.resolve("ES-DE").also { it.toFile().mkdirs() }
+        esdeHome.resolve("gamelists").toFile().mkdirs()
+        val roms = dir.resolve("ROMs").also { it.toFile().mkdirs() }
+
+        val resolved = resolvePlayPaths(
+            PlayTargetConfig(
+                romsPath = roms.toString(),
+                esdeHomePath = esdeHome.toString(),
+            ),
+        )
+
+        assertEquals(PathSource.MANUAL, resolved.source)
+        assertEquals(roms.toString(), resolved.romsPath)
+        assertEquals(esdeHome.toString(), resolved.esdeHomePath)
+        assertEquals(esdeHome.resolve("downloaded_media").toString(), resolved.downloadedMediaPath)
+    }
+
+    @Test
+    fun resolveFrontendHomePrefersExplicitOverride() {
+        assertEquals(
+            "/home/me/ES-DE",
+            resolveFrontendHome(
+                override = "/home/me/ES-DE",
+                retrodeckHome = "/home/me/retrodeck",
+                romsPath = "/home/me/ROMs",
+            ),
+        )
     }
 
     private fun tempDir(): Path {

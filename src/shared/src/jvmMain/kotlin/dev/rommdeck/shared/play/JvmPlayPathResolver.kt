@@ -1,6 +1,7 @@
 package dev.rommdeck.shared.play
 
 import dev.rommdeck.shared.config.PlayTargetConfig
+import dev.rommdeck.shared.esde.resolveEsdeLayout
 import dev.rommdeck.shared.paths.AppPaths
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -37,9 +38,11 @@ private val json = Json { ignoreUnknownKeys = true }
 actual fun resolvePlayPaths(playTarget: PlayTargetConfig): ResolvedPlayPaths {
     val hasManual = playTarget.romsPath.isNotBlank() ||
         playTarget.savesPath.isNotBlank() ||
-        playTarget.statesPath.isNotBlank()
+        playTarget.statesPath.isNotBlank() ||
+        playTarget.esdeHomePath.isNotBlank()
 
-    if (isLinux()) {
+    // Explicit ES-DE home means the user is targeting a non-RetroDECK frontend layout.
+    if (isLinux() && playTarget.esdeHomePath.isBlank()) {
         findRetroDeckJson(playTarget.configPath)?.let { (usedPath, rd) ->
             return buildFromRetroDeck(usedPath, rd, playTarget, PathSource.RETRODECK_AUTO)
         }
@@ -50,16 +53,8 @@ actual fun resolvePlayPaths(playTarget: PlayTargetConfig): ResolvedPlayPaths {
     }
 
     if (isLinux()) {
-        detectEsdeCandidate()?.let { candidate ->
-            return ResolvedPlayPaths(
-                romsPath = candidate.romsPath,
-                savesPath = candidate.savesPath,
-                statesPath = candidate.statesPath,
-                downloadedMediaPath = candidate.downloadedMediaPath,
-                esdeHomePath = candidate.homePath,
-                retrodeckJsonPath = "",
-                source = PathSource.ESDE_AUTO,
-            )
+        findRetroDeckJson(playTarget.configPath)?.let { (usedPath, rd) ->
+            return buildFromRetroDeck(usedPath, rd, playTarget, PathSource.RETRODECK_AUTO)
         }
     }
 
@@ -121,14 +116,24 @@ private fun buildFromRetroDeck(
     val roms = playTarget.romsPath.ifBlank { expandHome(paths.romsPath.orEmpty()) }
     val saves = playTarget.savesPath.ifBlank { expandHome(paths.savesPath.orEmpty()) }
     val states = playTarget.statesPath.ifBlank { expandHome(paths.statesPath.orEmpty()) }
-    val media = expandHome(paths.downloadedMediaPath.orEmpty()).ifBlank {
-        if (rdHome.isNotBlank()) "$rdHome/ES-DE/downloaded_media" else ""
+    val mediaFromRd = expandHome(paths.downloadedMediaPath.orEmpty())
+    val esdeHome = resolveFrontendHome(
+        override = playTarget.esdeHomePath,
+        retrodeckHome = rdHome,
+        romsPath = roms,
+    )
+    val media = when {
+        playTarget.esdeHomePath.isNotBlank() && esdeHome.isNotBlank() ->
+            resolveEsdeLayout(esdeHome).mediaRoot
+        mediaFromRd.isNotBlank() -> mediaFromRd
+        esdeHome.isNotBlank() -> resolveEsdeLayout(esdeHome).mediaRoot
+        else -> ""
     }
-    val esdeHome = rdHome.ifBlank { inferEsdeHomeFromRoms(roms) }
     val resolvedSource = if (
         playTarget.romsPath.isNotBlank() ||
         playTarget.savesPath.isNotBlank() ||
-        playTarget.statesPath.isNotBlank()
+        playTarget.statesPath.isNotBlank() ||
+        playTarget.esdeHomePath.isNotBlank()
     ) {
         PathSource.MANUAL
     } else {
@@ -149,9 +154,15 @@ private fun buildManual(playTarget: PlayTargetConfig): ResolvedPlayPaths {
     val roms = playTarget.romsPath
     val saves = playTarget.savesPath
     val states = playTarget.statesPath
-    val esdeHome = inferEsdeHomeFromRoms(roms)
-    val media = if (esdeHome.isNotBlank()) "$esdeHome/ES-DE/downloaded_media" else ""
-    val source = if (roms.isBlank() && saves.isBlank() && states.isBlank()) {
+    val esdeHome = resolveFrontendHome(
+        override = playTarget.esdeHomePath,
+        retrodeckHome = "",
+        romsPath = roms,
+    )
+    val media = if (esdeHome.isNotBlank()) resolveEsdeLayout(esdeHome).mediaRoot else ""
+    val source = if (
+        roms.isBlank() && saves.isBlank() && states.isBlank() && playTarget.esdeHomePath.isBlank()
+    ) {
         PathSource.UNCONFIGURED
     } else {
         PathSource.MANUAL
@@ -167,7 +178,7 @@ private fun buildManual(playTarget: PlayTargetConfig): ResolvedPlayPaths {
     )
 }
 
-/** Best-effort ES-DE layout detection when RetroDECK is not installed. */
+/** Best-effort ES-DE frontend detection when RetroDECK is not the resolved platform. */
 internal fun detectEsdeCandidate(): EsdeCandidate? {
     val home = System.getenv("HOME") ?: System.getProperty("user.home")
     val userProfile = System.getenv("USERPROFILE") ?: home
@@ -193,13 +204,16 @@ internal fun detectEsdeCandidate(): EsdeCandidate? {
         val roms = firstExistingSubdir(path, listOf("roms", "ROMs", "Roms"))
         val saves = firstExistingSubdir(path, listOf("saves", "Saves"))
         val states = firstExistingSubdir(path, listOf("states", "States", "savestates"))
-        if (roms != null || saves != null) {
+        // Official ES-DE often has gamelists/media here while ROMs live elsewhere.
+        val hasFrontendTree = path.resolve("gamelists").isDirectory() ||
+            path.resolve("downloaded_media").isDirectory()
+        if (roms != null || saves != null || hasFrontendTree) {
             return EsdeCandidate(
                 homePath = root,
                 romsPath = roms ?: "",
                 savesPath = saves ?: "",
                 statesPath = states ?: "",
-                downloadedMediaPath = "$root/downloaded_media",
+                downloadedMediaPath = resolveEsdeLayout(root).mediaRoot,
             )
         }
     }
@@ -212,6 +226,19 @@ private fun firstExistingSubdir(root: Path, names: List<String>): String? {
         if (child.isDirectory()) return child.toString()
     }
     return null
+}
+
+/**
+ * Frontend home preference: explicit Settings override, then RetroDECK home, then infer from ROMs.
+ */
+internal fun resolveFrontendHome(
+    override: String,
+    retrodeckHome: String,
+    romsPath: String,
+): String {
+    expandHome(override).takeIf { it.isNotBlank() }?.let { return it }
+    expandHome(retrodeckHome).takeIf { it.isNotBlank() }?.let { return it }
+    return inferEsdeHomeFromRoms(romsPath)
 }
 
 private fun inferEsdeHomeFromRoms(romsPath: String): String {

@@ -433,7 +433,7 @@ private fun SidebarFooter() {
                 color = c.text,
             )
             Text(
-                "RomM → ES-DE",
+                "RomM → RetroDECK",
                 style = MaterialTheme.typography.bodyLarge,
                 fontSize = 15.sp,
                 color = c.muted,

@@ -1,8 +1,8 @@
 # RommDeck — Kotlin application
 
-Cross-platform **RomM ↔ ES-DE** app: desktop client, background sync daemon, and shared Kotlin Multiplatform library.
+Cross-platform **RomM ↔ RetroDECK** app (ES-DE frontend): desktop client, background sync daemon, and shared Kotlin Multiplatform library.
 
-**v0.1.0** ships the **Linux desktop** app; RetroDECK is auto-detected when installed. Other ES-DE layouts use manual Target paths. Android and additional desktop OSes are planned for v0.2.0.
+**v0.1.0** ships the **Linux** app. **RetroDECK** is the supported platform (auto-detect). Other library trees (EmuDeck, plain ES-DE, custom) use manual Target paths. Android and additional desktop OSes are planned for v0.2.0.
 
 User-facing overview: [`../README.md`](../README.md).
 

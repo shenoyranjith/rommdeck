@@ -45,7 +45,7 @@ data class RommConfig(
     val apiToken: String = "",
 )
 
-/** ES-DE play paths (Settings → Target). */
+/** Library paths for Settings → Target (RetroDECK platform or manual folders). */
 @Serializable
 data class PlayTargetConfig(
     /** Path to retrodeck.json; empty = auto-detect on Linux when RetroDECK is installed. */
@@ -53,6 +53,12 @@ data class PlayTargetConfig(
     val romsPath: String = "",
     val savesPath: String = "",
     val statesPath: String = "",
+    /**
+     * ES-DE frontend home (directory that contains `gamelists/` and `downloaded_media/`).
+     * Empty = derive from RetroDECK home or from the ROMs folder parent.
+     * Needed when ROMs live outside the ES-DE tree (typical official ES-DE install).
+     */
+    val esdeHomePath: String = "",
     val syncMetadataOnDownload: Boolean = true,
 )
 

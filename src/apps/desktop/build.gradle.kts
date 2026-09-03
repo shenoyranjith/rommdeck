@@ -72,7 +72,7 @@ compose.desktop {
                 // Strip CI suffixes like 0.1.0+abc1234 for jpackage metadata.
                 v.substringBefore('+').substringBefore('-').ifBlank { "0.1.0" }
             }
-            description = "RomM ↔ ES-DE bridge — download ROMs, metadata, and sync saves"
+            description = "RomM ↔ RetroDECK (ES-DE frontend) — download ROMs, metadata, and sync saves"
             vendor = "RommDeck"
             copyright = "© RommDeck contributors"
             includeAllModules = true

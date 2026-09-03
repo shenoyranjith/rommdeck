@@ -63,17 +63,27 @@ fun PlaySettings(
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
-                    "Paths",
+                    "Library paths",
                     color = c.text,
                     style = RdType.body.copy(fontWeight = FontWeight.SemiBold),
                 )
                 Text(
                     buildAnnotatedString {
-                        append("ES-DE is used when paths are left empty. On Linux, RetroDECK paths apply when ")
+                        append("Supported platform: ")
+                        withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) {
+                            append("RetroDECK")
+                        }
+                        append(" — leave folders empty to auto-detect via ")
                         withStyle(SpanStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp)) {
                             append("retrodeck.json")
                         }
-                        append(" is found (or you set the config file path). Folder fields empty = auto-detect.")
+                        append(" on Linux. ")
+                        append("Plain ES-DE: set ")
+                        withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) {
+                            append("ES-DE home")
+                        }
+                        append(" (e.g. ~/ES-DE) plus ROM / save / state folders — ROMs are often outside the ES-DE tree. ")
+                        append("EmuDeck and custom layouts use the same manual fields.")
                     },
                     color = c.muted,
                     style = RdType.small.copy(lineHeight = 18.sp),
@@ -83,26 +93,32 @@ fun PlaySettings(
             RdField(
                 value = playTarget.configPath,
                 onValueChange = { persistPlayTargetDebounced(playTarget.copy(configPath = it)) },
-                label = "Config file",
-                placeholder = "Auto-detect",
+                label = "RetroDECK config",
+                placeholder = "Auto-detect retrodeck.json",
+            )
+            RdField(
+                value = playTarget.esdeHomePath,
+                onValueChange = { persistPlayTargetDebounced(playTarget.copy(esdeHomePath = it)) },
+                label = "ES-DE home",
+                placeholder = "e.g. ~/ES-DE — for gamelist.xml + media",
             )
             RdField(
                 value = playTarget.romsPath,
                 onValueChange = { persistPlayTargetDebounced(playTarget.copy(romsPath = it)) },
                 label = "ROMs folder",
-                placeholder = "Auto-detect",
+                placeholder = "Auto (RetroDECK) or e.g. ~/ROMs",
             )
             RdField(
                 value = playTarget.savesPath,
                 onValueChange = { persistPlayTargetDebounced(playTarget.copy(savesPath = it)) },
                 label = "Saves folder",
-                placeholder = "Auto-detect",
+                placeholder = "Auto (RetroDECK) or set manually",
             )
             RdField(
                 value = playTarget.statesPath,
                 onValueChange = { persistPlayTargetDebounced(playTarget.copy(statesPath = it)) },
                 label = "States folder",
-                placeholder = "Auto-detect",
+                placeholder = "Auto (RetroDECK) or set manually",
             )
 
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -114,6 +130,8 @@ fun PlaySettings(
                 Text(
                     buildString {
                         appendLine("Source: ${pathSourceLabel(paths.source)}")
+                        appendLine("ES-DE home: ${pathOrDash(paths.esdeHomePath)}")
+                        appendLine("Media: ${pathOrDash(paths.downloadedMediaPath)}")
                         appendLine("ROMs: ${pathOrDash(paths.romsPath)}")
                         appendLine("Saves: ${pathOrDash(paths.savesPath)}")
                         append("States: ${pathOrDash(paths.statesPath)}")
@@ -143,7 +161,7 @@ fun PlaySettings(
                             style = RdType.body.copy(fontWeight = FontWeight.SemiBold),
                         )
                         Text(
-                            "Update gamelist.xml and download cover art from RomM after each ROM lands on disk.",
+                            "Update ES-DE gamelist.xml and download cover art from RomM after each ROM lands on disk.",
                             color = c.muted,
                             style = RdType.small,
                         )
@@ -169,8 +187,8 @@ fun PlaySettings(
 private fun pathOrDash(path: String): String = path.ifBlank { "—" }
 
 private fun pathSourceLabel(source: PathSource): String = when (source) {
-    PathSource.RETRODECK_AUTO -> "retrodeck"
-    PathSource.ESDE_AUTO -> "esde"
-    PathSource.MANUAL -> "override"
+    PathSource.RETRODECK_AUTO -> "RetroDECK (auto)"
+    PathSource.ESDE_AUTO -> "ES-DE layout (heuristic)"
+    PathSource.MANUAL -> "manual"
     PathSource.UNCONFIGURED -> "unconfigured"
 }

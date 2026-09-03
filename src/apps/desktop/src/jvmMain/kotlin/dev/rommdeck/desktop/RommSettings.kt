@@ -180,7 +180,7 @@ fun RommSettings(
                     }
                 }
                 Text(
-                    "Map RomM platform slugs to ES-DE folders for downloads.",
+                    "Map RomM platform slugs to library folders (ES-DE system folders) for downloads.",
                     color = c.muted,
                     style = RdType.small,
                 )

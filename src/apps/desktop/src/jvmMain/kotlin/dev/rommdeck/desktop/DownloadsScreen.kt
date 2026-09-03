@@ -273,7 +273,7 @@ private fun DownloadActiveJobRow(
         else -> 0f
     }
     val progressLabel = when (job.status) {
-        DownloadJobStatus.METADATA -> "Writing ES-DE metadata…"
+        DownloadJobStatus.METADATA -> "Writing gamelist metadata…"
         DownloadJobStatus.RUNNING -> buildString {
             append(formatBytes(job.progressBytes))
             job.totalBytes?.let { append(" / ${formatBytes(it)}") }
