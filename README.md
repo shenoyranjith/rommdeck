@@ -6,7 +6,34 @@ RommDeck is a **cross-platform** app that connects **[RomM](https://github.com/r
 
 **ES-DE is supported** — plain installs and **[RetroDECK](https://retrodeck.net/)** (auto-detected on Linux when present). Leave Target paths empty for auto-detect, or set ROM / save / state folders manually in Settings.
 
-Built with **Kotlin Multiplatform** and **Compose**. Targets **RomM 5.x**. **v0.1.0** ships a **Linux desktop** app; macOS, Windows, and Android are planned.
+Built with **Kotlin Multiplatform** and **Compose**. Targets **RomM 5.x**. **v0.1.0** ships a **Linux** app (AppImage or run from source); macOS, Windows, and Android are planned.
+
+---
+
+## Install (Linux AppImage)
+
+RommDeck ships as a **portable AppImage** — one file you download and run. It does **not** install into `/usr` or register with a package manager.
+
+1. Download the latest `RommDeck-*-linux-*.AppImage` from [GitHub Releases](https://github.com/shenoyranjith/rommdeck/releases) (or the Actions artifact while testing).
+2. Make it executable and start it:
+
+```bash
+chmod +x RommDeck-*-linux-*.AppImage
+./RommDeck-*-linux-*.AppImage
+```
+
+3. Optional: move it somewhere permanent (e.g. `~/Applications/`) and add a desktop shortcut yourself.
+4. In the app: **Settings → RomM**, **Settings → Target**, then use the Library. Optional: **Settings → Auto-sync → Enable**.
+
+| Distro notes | |
+| --- | --- |
+| **CachyOS / Arch / Fedora / most desktops** | Run the AppImage from a normal user session. |
+| **SteamOS / Steam Deck** | Prefer Desktop Mode. If the AppImage fails to mount (FUSE), try `APPIMAGE_EXTRACT_AND_RUN=1 ./RommDeck-*.AppImage`. |
+| **No system Java needed** | The AppImage bundles a JRE for the GUI. Enabling auto-sync copies a sidecar + runtime under `~/.local/share/rommdeck/syncd/` so the daemon keeps running after you quit. |
+
+**Updates:** replace the AppImage file with a newer one and open it once. If auto-sync was enabled, the app refreshes the installed daemon when its version stamp differs.
+
+Config and library data live in `~/.config/rommdeck/` and `~/.local/share/rommdeck/` (shared across AppImage and source builds).
 
 ---
 
@@ -80,20 +107,21 @@ Config and state use standard paths on each platform (Linux: `~/.config/rommdeck
 
 ## Requirements
 
-### Runtime (using v0.1.0)
+### Runtime (AppImage or from source)
 
-- **Linux** desktop (macOS and Windows planned)
+- **Linux** desktop (SteamOS Desktop Mode, CachyOS, Fedora, …; macOS and Windows planned)
 - **ES-DE** — plain install or RetroDECK. Auto-detect common ES-DE folders when Target paths are empty, or set ROM / save / state paths manually in Settings → Target
 - **RomM 5.x** reachable from your machine
 - RomM **Client API Token** with library, asset, and device scopes ([details](#romm-api-token))
 
-### Building from source
+### Building from source / packaging
 
 - **JDK 17–25** with a **full (non-headless)** AWT install for the GUI — on Fedora: `sudo dnf install java-25-openjdk`
+- **AppImage packaging** also needs `jlink` + `jpackage` (JDK devel + jmods) — on Fedora: `sudo dnf install java-25-openjdk-devel java-25-openjdk-jmods`
 
 ---
 
-## Quick start
+## Quick start (from source)
 
 ```bash
 git clone https://github.com/shenoyranjith/rommdeck.git
@@ -204,6 +232,7 @@ packaging/systemd/ systemd user unit template (Linux)
 | `./gradlew :shared:jvmTest` | Unit tests |
 | `./gradlew build` | Build desktop, syncd, and shared |
 | `bash ../scripts/seed-dev-tree.sh` | Seed a local ES-DE folder tree + sample config (from `src/`) |
+| `../scripts/package-linux-appimage.sh` | Build a Linux `.AppImage` (run from repo root) |
 
 After changing sync daemon code, rebuild and redeploy the installed sidecar (or toggle auto-sync off/on in Settings):
 
@@ -213,13 +242,30 @@ rsync -a --delete apps/syncd/build/install/rommdeck-syncd/ ~/.local/share/rommde
 systemctl --user restart rommdeck-syncd.service
 ```
 
+### Linux AppImage (build locally)
+
+```bash
+# from repo root — needs jlink/jpackage (see Requirements)
+./scripts/package-linux-appimage.sh
+# → dist/RommDeck-<version>-linux-x86_64.AppImage
+```
+
+**CI:** [`.github/workflows/package-linux-appimage.yml`](.github/workflows/package-linux-appimage.yml) builds on:
+
+- pushes to `main` that touch app/packaging paths (artifact upload)
+- version tags `v*` (attaches the AppImage to the GitHub Release)
+- manual **workflow_dispatch**
+- pull requests that touch packaging paths (artifact upload)
+
+End users: prefer [Install (Linux AppImage)](#install-linux-appimage). Developer packaging details: [`src/README.md`](src/README.md).
+
 Roadmap and design notes: [`RommDeck-plan.md`](RommDeck-plan.md).
 
 ---
 
 ## Limitations
 
-RommDeck does not upload ROMs to RomM, launch games, or pick RetroArch cores. **v0.1.0** ships the **Linux desktop** app with **plain ES-DE and RetroDECK** path support; standalone-emulator save paths, macOS/Windows desktop builds, Android, and installable packages are planned for **v0.2.0**.
+RommDeck does not upload ROMs to RomM, launch games, or pick RetroArch cores. **v0.1.0** is Linux-first (plain ES-DE + RetroDECK). A **Linux AppImage** is built via GitHub Actions; macOS/Windows installers, Android, and standalone-emulator save paths are planned for **v0.2.0**.
 
 ---
 

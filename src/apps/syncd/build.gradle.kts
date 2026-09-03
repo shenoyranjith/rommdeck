@@ -3,6 +3,7 @@ plugins {
 }
 
 val syncdMainClass = "dev.rommdeck.syncd.MainKt"
+val syncdVersion = providers.gradleProperty("rommdeck.version").orElse("0.1.0")
 
 kotlin {
     jvm {
@@ -36,8 +37,17 @@ tasks.register<Copy>("installDist") {
         from(layout.projectDirectory.dir("packaging"))
     }
     doLast {
-        val unix = installDir.get().asFile.resolve("bin/rommdeck-syncd")
+        val root = installDir.get().asFile
+        val unix = root.resolve("bin/rommdeck-syncd")
         if (unix.exists()) unix.setExecutable(true, false)
+        val version = syncdVersion.get()
+        root.resolve("version.json").writeText(
+            """
+            {
+                "version": "$version"
+            }
+            """.trimIndent() + "\n",
+        )
     }
 }
 

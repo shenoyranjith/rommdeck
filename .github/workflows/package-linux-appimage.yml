@@ -1,0 +1,91 @@
+name: Package Linux AppImage
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "src/**"
+      - "scripts/package-linux-appimage.sh"
+      - ".github/workflows/package-linux-appimage.yml"
+    tags:
+      - "v*"
+  pull_request:
+    paths:
+      - "src/**"
+      - "scripts/package-linux-appimage.sh"
+      - ".github/workflows/package-linux-appimage.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  linux-appimage:
+    name: Build AppImage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Make wrappers executable
+        run: |
+          chmod +x src/gradlew scripts/package-linux-appimage.sh
+
+      - name: Install packaging tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends curl libfuse2
+
+      - name: Resolve version
+        id: version
+        run: |
+          if [[ "${GITHUB_REF_TYPE:-}" == "tag" && "${GITHUB_REF_NAME}" == v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="$(grep -E '^rommdeck\.version=' src/gradle.properties | cut -d= -f2)"
+            VERSION="${VERSION}+${GITHUB_SHA::7}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Building RommDeck $VERSION"
+
+      - name: Build AppImage
+        env:
+          ROMMDECK_VERSION: ${{ steps.version.outputs.version }}
+        run: ./scripts/package-linux-appimage.sh "$GITHUB_WORKSPACE/dist"
+
+      - name: Upload AppImage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RommDeck-linux-AppImage
+          path: dist/*.AppImage
+          if-no-files-found: error
+
+  release:
+    name: Attach to GitHub Release
+    needs: linux-appimage
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download AppImage
+        uses: actions/download-artifact@v4
+        with:
+          name: RommDeck-linux-AppImage
+          path: dist
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.AppImage
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

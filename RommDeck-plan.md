@@ -3,7 +3,7 @@ name: RommDeck
 overview: 'Cross-platform RomM ↔ ES-DE bridge. v0.1.0 ships Linux desktop with plain ES-DE + RetroDECK path resolution. v0.2.0 adds packaging, macOS/Windows/Android, ES-DE polish, broader sync, and play sessions.'
 todos:
   - id: packaging
-    content: 'Production packaging — installable desktop app + fixed syncd prefix (ROMMDECK_APP_ROOT, ROMMDECK_SYNCD_DIST)'
+    content: 'Production packaging — Linux AppImage via GitHub Actions + ROMMDECK_APP_ROOT/syncd bundle; macOS/Windows installers later'
     status: pending
   - id: desktop-platforms
     content: 'Desktop on macOS and Windows — Compose Desktop builds, per-OS sync daemon/service'
@@ -64,10 +64,10 @@ Suggested order:
 
 End-user installs without cloning the dev repo.
 
-- Installable desktop app (AppImage / deb — TBD)
-- Production `rommdeck-syncd` with fixed prefix (`ROMMDECK_APP_ROOT`, `ROMMDECK_SYNCD_DIST`)
-- Build on Gradle `:apps:syncd:installDist` and in-app daemon installer
-- Replace removed Node `deploy-syncd.sh` with Kotlin-oriented deploy docs/script
+- **Linux AppImage** (preferred) — `scripts/package-linux-appimage.sh` + [`.github/workflows/package-linux-appimage.yml`](.github/workflows/package-linux-appimage.yml)
+- Packaged layout: `$ROMMDECK_APP_ROOT/{bin,lib,syncd}`; app resolves syncd via `ROMMDECK_APP_ROOT` / AppImage `APPDIR` / jpackage detection ([`AppInstallLayout.kt`](src/shared/src/jvmMain/kotlin/dev/rommdeck/shared/paths/AppInstallLayout.kt))
+- Syncd install copies a bundled JRE from the app image when enabling auto-sync (no system JDK required)
+- macOS `.dmg` / Windows `.msi` via Compose `nativeDistributions` (CI matrix later)
 
 ### 2. Desktop on macOS and Windows
 

@@ -54,6 +54,8 @@ import dev.rommdeck.shared.config.createConfigRepository
 import dev.rommdeck.shared.db.LibraryStats
 import dev.rommdeck.shared.play.resolvePlayPaths
 import dev.rommdeck.shared.romm.createRommClient
+import dev.rommdeck.shared.sync.SyncdRefreshStatus
+import dev.rommdeck.shared.sync.ensureInstalledSyncdMatchesApp
 import dev.rommdeck.shared.sync.readDaemonStatus
 import java.awt.Toolkit
 import kotlinx.coroutines.CoroutineScope
@@ -226,6 +228,18 @@ fun AppRoot(
                 client.close()
             }
         }
+    }
+
+    LaunchedEffect(Unit) {
+        val refresh = withContext(Dispatchers.IO) {
+            ensureInstalledSyncdMatchesApp(AppInfo.version)
+        }
+        when (refresh.status) {
+            SyncdRefreshStatus.UPDATED -> showNotice(refresh.message, NotificationTone.Ok)
+            SyncdRefreshStatus.FAILED -> showNotice(refresh.message, NotificationTone.Err)
+            SyncdRefreshStatus.SKIPPED -> Unit
+        }
+        daemon = withContext(Dispatchers.IO) { readDaemonStatus() }
     }
 
     LaunchedEffect(Unit) {

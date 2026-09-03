@@ -17,3 +17,7 @@ src/local.properties
 src/apps/android/.cxx/
 src/.idea/
 src/.vscode/
+
+# Packaging output
+dist/
+

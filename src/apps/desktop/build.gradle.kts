@@ -5,8 +5,10 @@ plugins {
 }
 
 import org.gradle.api.tasks.JavaExec
+import java.nio.file.Files
 
 val appVersion = providers.gradleProperty("rommdeck.version").orElse("0.1.0")
+val desktopPackageName = "RommDeck"
 
 val generateAppVersion by tasks.registering {
     val outputDir = layout.buildDirectory.dir("generated/app-version-src")
@@ -62,14 +64,69 @@ compose.desktop {
     application {
         mainClass = "dev.rommdeck.desktop.MainKt"
         nativeDistributions {
+            // Linux .AppImage is produced by scripts/package-linux-appimage.sh from createDistributable.
+            // Compose TargetFormat.AppImage means jpackage's unpacked app dir, not a .AppImage file.
+            // Add TargetFormat.Dmg / Msi when those CI jobs land (macOS requires package major > 0).
+            packageName = desktopPackageName
+            packageVersion = appVersion.get().let { v ->
+                // Strip CI suffixes like 0.1.0+abc1234 for jpackage metadata.
+                v.substringBefore('+').substringBefore('-').ifBlank { "0.1.0" }
+            }
+            description = "RomM ↔ ES-DE bridge — download ROMs, metadata, and sync saves"
+            vendor = "RommDeck"
+            copyright = "© RommDeck contributors"
+            includeAllModules = true
+
             val iconsDir = layout.projectDirectory.dir("src/jvmMain/resources/icons")
             linux {
                 iconFile.set(iconsDir.file("app-icon-512.png"))
+                packageName = "rommdeck"
+                debMaintainer = "rommdeck@users.noreply.github.com"
+                menuGroup = "Game"
+                appCategory = "Game"
             }
             windows {
                 iconFile.set(iconsDir.file("app-icon.ico"))
+                menuGroup = "RommDeck"
+                upgradeUuid = "a7c3e8f1-4b2d-4e9a-9c1f-8d6b5a4e3f20"
+            }
+            macOS {
+                bundleID = "dev.rommdeck.desktop"
+                // Add .icns when packaging macOS builds.
             }
         }
+    }
+}
+
+val syncdInstallDir = project(":apps:syncd").layout.buildDirectory.dir("install/rommdeck-syncd")
+
+val distributableAppDir = layout.buildDirectory.dir("compose/binaries/main/app/$desktopPackageName")
+
+/**
+ * Copy syncd next to the Compose app image so packaged installs resolve
+ * `$ROMMDECK_APP_ROOT/syncd` without a git checkout.
+ */
+val bundleSyncdIntoDistributable by tasks.registering(Copy::class) {
+    group = "distribution"
+    description = "Bundle rommdeck-syncd into the Compose createDistributable output"
+    dependsOn("createDistributable", ":apps:syncd:installDist")
+    from(syncdInstallDir)
+    into(distributableAppDir.map { it.dir("syncd") })
+}
+
+tasks.register("prepareLinuxAppImageContents") {
+    group = "distribution"
+    description = "Build Compose app image and bundle syncd (input for AppImage packaging)"
+    dependsOn(bundleSyncdIntoDistributable)
+    doLast {
+        val appDir = distributableAppDir.get().asFile
+        check(appDir.isDirectory) { "Missing Compose app image at $appDir" }
+        val syncdBin = appDir.resolve("syncd/bin/rommdeck-syncd")
+        check(syncdBin.isFile) { "Missing bundled syncd launcher at $syncdBin" }
+        if (!Files.isExecutable(syncdBin.toPath())) {
+            syncdBin.setExecutable(true, false)
+        }
+        logger.lifecycle("Packaged app tree ready at $appDir")
     }
 }
 

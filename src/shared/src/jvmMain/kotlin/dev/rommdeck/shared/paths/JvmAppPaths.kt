@@ -22,6 +22,12 @@ actual object AppPaths {
     fun defaultRetroDeckJsonPath(): String =
         "${homeDir()}/.var/app/net.retrodeck.retrodeck/config/retrodeck/retrodeck.json"
 
+    /** Packaged install prefix when set or detectible; null for Gradle/dev runs. */
+    fun appRoot(): String? = AppInstallLayout.appRoot()?.toString()
+
+    /** Bundled syncd tree for packaged installs (`$appRoot/syncd` or env override). */
+    fun bundledSyncdDir(): String? = AppInstallLayout.bundledSyncdDist()?.toString()
+
     private fun homeDir(): String =
         System.getenv("HOME") ?: System.getProperty("user.home")
 }

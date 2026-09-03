@@ -1,6 +1,7 @@
 package dev.rommdeck.shared.sync
 
 import dev.rommdeck.shared.log.log
+import dev.rommdeck.shared.paths.AppInstallLayout
 import dev.rommdeck.shared.paths.AppPaths
 import java.nio.file.Files
 import java.nio.file.Path
@@ -22,11 +23,19 @@ actual fun installAutoSyncService(): ServiceCommandResult {
     val dist = resolveInstallDist()
         ?: return ServiceCommandResult(
             false,
-            "Could not find sidecar distribution. Run ./gradlew :apps:syncd:installDist from src/, " +
-                "or set ROMMDECK_SYNCD_DIST / ROMMDECK_SRC_ROOT.",
+            "Could not find sidecar distribution. Packaged installs need syncd under " +
+                "\$ROMMDECK_APP_ROOT/syncd; for development run ./gradlew :apps:syncd:installDist " +
+                "from src/, or set ROMMDECK_SYNCD_DIST / ROMMDECK_APP_ROOT / ROMMDECK_SRC_ROOT.",
         )
     val dest = Path.of(AppPaths.dataDir(), "syncd")
     copyTree(dist, dest)
+    maybeBundleRuntime(dest)
+    val version = resolveSyncdDistVersion(dist.toString()).let { stamped ->
+        if (stamped != "unknown") stamped
+        else System.getenv("ROMMDECK_VERSION")?.takeIf { it.isNotBlank() } ?: stamped
+    }
+    writeSyncdInstallManifest(dest.toString(), version)
+    log.info("daemon", "installed syncd", mapOf("version" to version, "path" to dest.toString()))
     val execPath = sidecarExecPath(dest)
     if (!Files.isRegularFile(execPath)) {
         return ServiceCommandResult(false, "Sidecar start script missing at $execPath")
@@ -75,11 +84,7 @@ internal fun linuxBinPath(): Path =
 internal fun macPlistPath(): Path =
     Path.of(homeDir(), "Library", "LaunchAgents", "$MAC_LABEL.plist")
 
-internal fun sidecarExecPath(installDir: Path): Path {
-    val unix = installDir.resolve("bin").resolve(SERVICE_NAME)
-    val windows = installDir.resolve("bin").resolve("$SERVICE_NAME.bat")
-    return if (currentOs() == DesktopOs.WINDOWS) windows else unix
-}
+internal fun sidecarExecPath(installDir: Path): Path = AppInstallLayout.sidecarExec(installDir)
 
 private fun writeOsService(execStart: Path): ServiceCommandResult = when (currentOs()) {
     DesktopOs.LINUX -> {
@@ -155,11 +160,19 @@ private fun controlSchtasks(action: AutoSyncAction): ServiceCommandResult = when
     AutoSyncAction.STATUS -> runCommand("schtasks", "/Query", "/TN", WINDOWS_TASK)
 }
 
-private fun resolveInstallDist(): Path? {
-    System.getenv("ROMMDECK_SYNCD_DIST")?.let { env ->
-        val path = Path.of(env)
-        if (Files.isDirectory(path)) return path
-    }
+/**
+ * Prefer packaged/bundled syncd, then Gradle build tree, then a previously copied install.
+ *
+ * Order:
+ * 1. `ROMMDECK_SYNCD_DIST`
+ * 2. `$ROMMDECK_APP_ROOT/syncd` (or AppImage / jpackage detection)
+ * 3. Compose `appResources` syncd
+ * 4. Gradle `:apps:syncd:installDist` under a detected source root
+ * 5. Existing `$dataDir/syncd` from a prior install
+ */
+internal fun resolveInstallDist(): Path? {
+    AppInstallLayout.bundledSyncdDist()?.let { return it }
+
     val existing = Path.of(AppPaths.dataDir(), "syncd")
     val root = findKotlinSrcRoot()
     if (root != null) {
@@ -168,11 +181,11 @@ private fun resolveInstallDist(): Path? {
             log.warn("daemon", "installDist failed", mapOf("error" to built.output))
         }
         val fromGradle = root.resolve("apps/syncd/build/install/rommdeck-syncd")
-        if (Files.isDirectory(fromGradle)) return fromGradle
+        if (AppInstallLayout.isSyncdDist(fromGradle)) return fromGradle
         val alt = root.resolve("apps/syncd/build/install/syncd")
-        if (Files.isDirectory(alt)) return alt
+        if (AppInstallLayout.isSyncdDist(alt)) return alt
     }
-    if (Files.isRegularFile(sidecarExecPath(existing))) return existing
+    if (AppInstallLayout.isSyncdDist(existing)) return existing
     return null
 }
 
@@ -209,6 +222,19 @@ private fun buildInstallDist(root: Path): ServiceCommandResult {
         listOf(wrapper.toString(), ":apps:syncd:installDist", "--quiet")
     }
     return runCommand(*command.toTypedArray(), workingDirectory = root)
+}
+
+private fun maybeBundleRuntime(syncdDest: Path) {
+    val existing = syncdDest.resolve("runtime")
+    if (Files.isRegularFile(existing.resolve("bin").resolve(if (currentOs() == DesktopOs.WINDOWS) "java.exe" else "java"))) {
+        return
+    }
+    val fromApp = AppInstallLayout.appRoot()?.resolve("lib")?.resolve("runtime")
+    if (fromApp != null && Files.isDirectory(fromApp)) {
+        log.info("daemon", "bundling JRE for syncd", mapOf("from" to fromApp.toString()))
+        copyTree(fromApp, existing)
+        return
+    }
 }
 
 private fun copyTree(from: Path, to: Path) {

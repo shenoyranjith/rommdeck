@@ -1,4 +1,26 @@
 #!/usr/bin/env bash
 set -euo pipefail
 APP_HOME="$(cd "$(dirname "$0")/.." && pwd)"
-exec java -Dfile.encoding=UTF-8 -cp "$APP_HOME/lib/*" dev.rommdeck.syncd.MainKt "$@"
+
+resolve_java() {
+  if [[ -x "$APP_HOME/runtime/bin/java" ]]; then
+    echo "$APP_HOME/runtime/bin/java"
+    return
+  fi
+  if [[ -n "${ROMMDECK_JAVA:-}" && -x "${ROMMDECK_JAVA}" ]]; then
+    echo "$ROMMDECK_JAVA"
+    return
+  fi
+  if [[ -n "${ROMMDECK_APP_ROOT:-}" && -x "$ROMMDECK_APP_ROOT/lib/runtime/bin/java" ]]; then
+    echo "$ROMMDECK_APP_ROOT/lib/runtime/bin/java"
+    return
+  fi
+  if [[ -n "${JAVA_HOME:-}" && -x "$JAVA_HOME/bin/java" ]]; then
+    echo "$JAVA_HOME/bin/java"
+    return
+  fi
+  command -v java
+}
+
+JAVA_BIN="$(resolve_java)"
+exec "$JAVA_BIN" -Dfile.encoding=UTF-8 -cp "$APP_HOME/lib/*" dev.rommdeck.syncd.MainKt "$@"

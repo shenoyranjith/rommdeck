@@ -16,6 +16,13 @@ User-facing overview: [`../README.md`](../README.md).
   ./check-display.sh   # should report OK for libawt_xawt.so
   ```
 
+- **AppImage packaging** — Compose `createDistributable` needs `jlink` and `jpackage` (and `jmods`). On Fedora:
+
+  ```bash
+  sudo dnf install java-25-openjdk-devel java-25-openjdk-jmods
+  export JAVA_HOME=/usr/lib/jvm/java-25-openjdk   # optional but recommended
+  ```
+
 - **JDK 17–25** — Gradle 9.2.1 runs on JDK 25. **Compilation** targets **JVM 21** (auto-downloaded via foojay if missing).
 - Compose Hot Reload runs on **JetBrains Runtime 21** (auto-provisioned when using `./run-desktop-hot.sh`).
 - For Android builds: Android SDK + `ANDROID_HOME` (optional until v0.2.0).
@@ -92,7 +99,19 @@ This runs `./gradlew :apps:desktop:hotRunJvm --autoReload` with `DISPLAY`, Wayla
 ./gradlew build                  # desktop + syncd + shared
 ./gradlew :shared:jvmTest        # unit tests
 ./gradlew :apps:syncd:installDist # sync daemon install tree
+./gradlew :apps:desktop:prepareLinuxAppImageContents  # Compose app + bundled syncd
 ```
+
+## Linux AppImage (packaged)
+
+From the **repo root** (requires Linux + JDK):
+
+```bash
+./scripts/package-linux-appimage.sh
+# → dist/RommDeck-<version>-linux-x86_64.AppImage
+```
+
+GitHub Actions builds the same artifact on tags `v*` and via workflow dispatch (`.github/workflows/package-linux-appimage.yml`).
 
 ## Background sync daemon
 
@@ -106,7 +125,18 @@ rsync -a --delete apps/syncd/build/install/rommdeck-syncd/ ~/.local/share/rommde
 systemctl --user restart rommdeck-syncd.service
 ```
 
-Optional env vars for dev installs: `ROMMDECK_SRC_ROOT` (path to this `src/` directory), `ROMMDECK_SYNCD_DIST` (prebuilt install tree).
+Optional env vars:
+
+| Variable | Purpose |
+| --- | --- |
+| `ROMMDECK_APP_ROOT` | Packaged install prefix (`bin/`, `lib/`, `syncd/`) |
+| `ROMMDECK_SYNCD_DIST` | Prebuilt syncd install tree |
+| `ROMMDECK_SRC_ROOT` | Path to this `src/` directory (dev Gradle builds) |
+| `ROMMDECK_VERSION` | Fallback version stamp if syncd dist has no `version.json` |
+
+Installed syncd version is recorded at `~/.local/share/rommdeck/syncd/version.json` (read via `readInstalledSyncdVersion()`).
+
+On desktop startup, if the auto-sync service is installed and that stamp differs from the app version, RommDeck reinstalls syncd from the current package/dev tree and restarts the daemon when it was running.
 
 ## Module layout
 

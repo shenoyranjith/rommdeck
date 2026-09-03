@@ -51,6 +51,7 @@ import dev.rommdeck.shared.sync.controlAutoSyncService
 import dev.rommdeck.shared.sync.installAutoSyncService
 import dev.rommdeck.shared.sync.isAutoSyncServiceInstalled
 import dev.rommdeck.shared.sync.readDaemonStatus
+import dev.rommdeck.shared.sync.readInstalledSyncdVersion
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -75,6 +76,7 @@ fun AutoSyncSettings(
     var installBusy by remember { mutableStateOf(false) }
     var unitInstalled by remember { mutableStateOf<Boolean?>(null) }
     var daemon by remember { mutableStateOf<DaemonStatus?>(null) }
+    var installedSyncdVersion by remember { mutableStateOf<String?>(null) }
     var advancedExpanded by remember { mutableStateOf(false) }
     val sync = config.sync
 
@@ -82,6 +84,7 @@ fun AutoSyncSettings(
         while (isActive) {
             unitInstalled = withContext(Dispatchers.IO) { isAutoSyncServiceInstalled() }
             daemon = withContext(Dispatchers.IO) { readDaemonStatus() }
+            installedSyncdVersion = withContext(Dispatchers.IO) { readInstalledSyncdVersion() }
             delay(DaemonPollMs)
         }
     }
@@ -155,6 +158,9 @@ fun AutoSyncSettings(
                                         isAutoSyncServiceInstalled()
                                     }
                                     daemon = withContext(Dispatchers.IO) { readDaemonStatus() }
+                                    installedSyncdVersion = withContext(Dispatchers.IO) {
+                                        readInstalledSyncdVersion()
+                                    }
                                     systemctlBusy = false
                                 }
                             }
@@ -182,6 +188,9 @@ fun AutoSyncSettings(
                                 append("pid $pid")
                             }
                         }
+                        installedSyncdVersion?.let { ver ->
+                            append(" · v$ver")
+                        }
                     },
                     color = c.muted,
                     style = RdType.small,
@@ -207,6 +216,9 @@ fun AutoSyncSettings(
                                     val result = withContext(Dispatchers.IO) { installAutoSyncService() }
                                     unitInstalled = withContext(Dispatchers.IO) {
                                         isAutoSyncServiceInstalled()
+                                    }
+                                    installedSyncdVersion = withContext(Dispatchers.IO) {
+                                        readInstalledSyncdVersion()
                                     }
                                     if (result.ok) {
                                         onNotice("Sync daemon installed", NotificationTone.Ok)
