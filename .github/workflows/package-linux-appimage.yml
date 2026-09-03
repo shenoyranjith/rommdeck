@@ -2,15 +2,13 @@ name: Package Linux AppImage
 
 on:
   workflow_dispatch:
+  # Do not put `paths:` on this push block — path filters prevent tag workflows
+  # from running (tags have no changed-file list), so releases never got the AppImage.
   push:
-    branches:
-      - main
-    paths:
-      - "src/**"
-      - "scripts/package-linux-appimage.sh"
-      - ".github/workflows/package-linux-appimage.yml"
     tags:
       - "v*"
+    branches:
+      - main
   pull_request:
     paths:
       - "src/**"
@@ -85,7 +83,10 @@ jobs:
       - name: Upload release assets
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.ref_name }}
+          name: RommDeck ${{ github.ref_name }}
           files: dist/*.AppImage
+          fail_on_unmatched_files: true
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

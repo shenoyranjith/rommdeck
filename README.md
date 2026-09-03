@@ -252,10 +252,24 @@ systemctl --user restart rommdeck-syncd.service
 
 **CI:** [`.github/workflows/package-linux-appimage.yml`](.github/workflows/package-linux-appimage.yml) builds on:
 
-- pushes to `main` that touch app/packaging paths (artifact upload)
-- version tags `v*` (attaches the AppImage to the GitHub Release)
+- pushes to `main` (artifact upload)
+- version tags `v*` (creates/updates the GitHub Release and attaches the AppImage)
 - manual **workflow_dispatch**
 - pull requests that touch packaging paths (artifact upload)
+
+To publish a release:
+
+```bash
+git tag -a v0.1.0 -m "v0.1.0"
+git push origin v0.1.0
+```
+
+Re-running for an existing tag (after a workflow fix on `main`):
+
+```bash
+git push origin :refs/tags/v0.1.0   # delete remote tag
+git push origin v0.1.0              # push again → builds + attaches AppImage
+```
 
 End users: prefer [Install (Linux AppImage)](#install-linux-appimage). Developer packaging details: [`src/README.md`](src/README.md).
 
