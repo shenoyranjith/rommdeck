@@ -8,8 +8,9 @@ data class EsdeLayout(
 )
 
 /**
+ * Resolve ES-DE frontend roots under a library home.
  * RetroDECK home is the RD root (`…/retrodeck`) with ES-DE nested under it.
- * Plain ES-DE home is already the ES-DE directory.
+ * A path that already ends in `ES-DE` is treated as the frontend root itself.
  */
 fun resolveEsdeLayout(esdeHomePath: String, downloadedMediaPath: String = ""): EsdeLayout {
     val home = esdeHomePath.trimEnd('/', '\\')

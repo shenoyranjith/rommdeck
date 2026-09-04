@@ -73,7 +73,7 @@ fun PlatformMapEditor(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                "RomM platform slug → ES-DE folder. Edit folders that differ from the bundled default; unchanged rows are not saved as overrides.",
+                "RomM platform slug → library folder. Edit folders that differ from the bundled default; unchanged rows are not saved as overrides.",
                 color = c.muted,
                 style = RdType.small,
             )
@@ -106,7 +106,7 @@ fun PlatformMapEditor(
                         .padding(horizontal = 16.dp, vertical = 10.dp),
                 ) {
                     Text("RomM slug", color = c.muted, style = RdType.micro, modifier = Modifier.weight(1.1f))
-                    Text("ES-DE folder", color = c.muted, style = RdType.micro, modifier = Modifier.weight(1.1f))
+                    Text("Library folder", color = c.muted, style = RdType.micro, modifier = Modifier.weight(1.1f))
                     Text("Source", color = c.muted, style = RdType.micro, modifier = Modifier.weight(0.8f))
                 }
                 if (visibleRows.isEmpty()) {

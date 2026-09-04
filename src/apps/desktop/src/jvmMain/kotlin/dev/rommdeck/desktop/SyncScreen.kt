@@ -68,7 +68,7 @@ fun SyncScreen(
     ) {
         RdPageHeader(
             title = "Sync",
-            description = "RetroDECK saves and states with RomM.",
+            description = "Sync battery saves and states with RomM (RetroArch paths under your Target folders).",
             actions = {
                 RdButton(
                     onClick = {

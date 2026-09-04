@@ -21,5 +21,4 @@ dependencyResolutionManagement {
 
 include(":shared")
 include(":apps:desktop")
-include(":apps:android")
 include(":apps:syncd")
