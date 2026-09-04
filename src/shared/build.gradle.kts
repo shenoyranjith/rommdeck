@@ -3,12 +3,10 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.compose.multiplatform)
-    alias(libs.plugins.android.library)
     alias(libs.plugins.sqldelight)
 }
 
 kotlin {
-    androidTarget()
     jvm {
         @OptIn(org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi::class)
         compilerOptions {
@@ -43,21 +41,9 @@ kotlin {
             implementation(libs.ktor.client.cio)
             implementation(libs.sqldelight.sqlite.driver)
         }
-        androidMain.dependencies {
-            implementation(libs.ktor.client.okhttp)
-            implementation(libs.sqldelight.android.driver)
-        }
         jvmTest.dependencies {
             implementation(kotlin("test-junit"))
         }
-    }
-}
-
-android {
-    namespace = "dev.rommdeck.shared"
-    compileSdk = libs.versions.android.compileSdk.get().toInt()
-    defaultConfig {
-        minSdk = libs.versions.android.minSdk.get().toInt()
     }
 }
 

@@ -2,7 +2,7 @@
 
 Cross-platform **RomM ↔ RetroDECK** app (ES-DE frontend): desktop client, background sync daemon, and shared Kotlin Multiplatform library.
 
-**v0.1.0** ships the **Linux** app. **RetroDECK** is the supported platform (auto-detect). Other library trees (EmuDeck, plain ES-DE, custom) use manual Target paths. **Android (v0.2.0):** RetroArch + ES-DE on device; **mandatory** Target paths, no auto-detect — app does not run library/sync until configured.
+**v0.1.0** ships the **Linux** app. **RetroDECK** is the supported platform (auto-detect). Other library trees (EmuDeck, plain ES-DE, custom) use manual Target paths. **Android is out of scope** — use [Argosy](https://github.com/rommapp/argosy-launcher).
 
 User-facing overview: [`../README.md`](../README.md).
 
@@ -25,7 +25,6 @@ User-facing overview: [`../README.md`](../README.md).
 
 - **JDK 17–25** — Gradle 9.2.1 runs on JDK 25. **Compilation** targets **JVM 21** (auto-downloaded via foojay if missing).
 - Compose Hot Reload runs on **JetBrains Runtime 21** (auto-provisioned when using `./run-desktop-hot.sh`).
-- For Android builds: Android SDK + `ANDROID_HOME` (optional until v0.2.0). On Android, users run **RetroArch + ES-DE** and must set **all Target paths manually** (no RetroDECK / no auto-detect); the app gates features until paths are configured.
 
 ## Run the desktop app
 
@@ -142,10 +141,9 @@ On desktop startup, if the auto-sync service is installed and that stamp differs
 
 | Module | Role |
 |--------|------|
-| `shared/` | KMP library — `commonMain` + `jvmMain` + `androidMain` |
+| `shared/` | KMP library — `commonMain` + `jvmMain` |
 | `apps/desktop/` | Compose Desktop JVM app |
 | `apps/syncd/` | Background sync JVM sidecar |
-| `apps/android/` | Jetpack Compose stub (v0.2.0) |
 
 ## Shared data
 

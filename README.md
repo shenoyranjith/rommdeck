@@ -11,12 +11,12 @@ RommDeck connects **[RomM](https://github.com/rommapp/romm)** (your self-hosted 
 | **[RetroDECK](https://retrodeck.net/)** | Supported **platform** (Linux desktop) — known folder layout; auto-detected via `retrodeck.json` when Target paths are empty |
 | **ES-DE** | Supported **frontend** — gamelist.xml + `downloaded_media` (ES-DE does not install emulators itself) |
 | **Manual Target** (desktop) | Plain ES-DE, EmuDeck, custom — set **ES-DE home** + ROM / save / state when not using RetroDECK auto-detect |
-| **Android (v0.2.0)** | **RetroArch + ES-DE on device** — user installs emulators; **all Target paths mandatory** (no auto-detect); app blocked until configured |
 
 RommDeck does not install emulators or configure RetroArch cores. Tools like EmuDeck set those up; RommDeck only needs the library folders.
 
-Built with **Kotlin Multiplatform** and **Compose**. Targets **RomM 5.x**. **v0.1.0** ships a **Linux** app (AppImage or run from source); macOS, Windows, and Android are planned.
+**Android:** use **[Argosy](https://github.com/rommapp/argosy-launcher)** — the RomM project’s native Android client for syncing, installing, and launching on phones/handhelds. RommDeck is the **desktop** RetroDECK / ES-DE companion and does not ship an Android app.
 
+Built with **Kotlin Multiplatform** and **Compose**. Targets **RomM 5.x**. **v0.1.0** ships a **Linux** app (AppImage or run from source); macOS and Windows desktop are later.
 > **Disclaimer:** RommDeck is a spare-time project built with help from AI coding tools. Expect rough edges; treat it as experimental and back up saves before enabling sync.
 
 ---
@@ -85,7 +85,7 @@ Config and library data live in `~/.config/rommdeck/` and `~/.local/share/rommde
 - **Sync Now** — manual sync from the app
 - **Background daemon** — `rommdeck-syncd` (Linux: systemd user service) — interval poll, startup sync, filesystem watch on save folders
 - **One-click enable** — Settings installs and starts the daemon on Linux; no manual unit setup in normal use
-- **Battery saves and save states** — RetroArch-style paths under your ES-DE save/state roots (`.srm`, `.state`, `.state0`–`.state9`, …)
+- **Battery saves and save states** — RetroArch layout under your configured save/state roots (`.srm`, `.state`, `.state0`–`.state9`, …)
 - **Two-way, download-only, and upload-only** — directional sync enforced locally; RomM device registration uses supported API modes
 - **Conflict policies** — `keep_both`, `server_wins`, or `device_wins`; same policy for manual and auto sync
 - **Multi-device** — register as a RomM sync device; slot-based sync across machines
@@ -198,16 +198,33 @@ Create in RomM → **Administration → Client API Tokens**.
 
 ## Save sync in brief
 
-RommDeck discovers saves under your configured ES-DE save/state roots, using the default RetroArch layout:
+RommDeck discovers saves under your configured **save** and **state** Target roots, using the default **RetroArch** layout:
 
 ```text
 {saves_path}/{platform}/{game_basename}.srm
 {states_path}/{platform}/{game_basename}.state
 ```
 
+On **desktop / RetroDECK**, those roots often sit under the ES-DE/RetroDECK tree. Point Settings → Target at the folders your machine actually uses.
+
 Sync runs when you click **Sync Now**, on a schedule (default 5 min), and after save files change (debounced, default 45 s). RomM matches saves by **slot** (`default`, `state`, `state0`, …), not by timestamped server filenames.
 
-**v1 scope:** RetroArch-default platforms only. Standalone emulators (Dolphin, PCSX2, …) and custom save-path layouts are not supported yet.
+### Platform / emulator save status
+
+What RommDeck can sync today vs planned (inspired by tables like [Freegosy](https://github.com/abduznik/Freegosy#platform--emulator-status)). Status is about **save/state sync**, not launching games.
+
+| Emulator | Status | Notes |
+| --- | --- | --- |
+| **RetroArch** | Supported | Default `{platform}/{game}.srm` / `.state*` under Target save/state paths. Covers the RetroArch-mapped platforms in [`data/platform-emulator-map.json`](data/platform-emulator-map.json). |
+| **Dolphin** | Planned | GC/Wii standalone paths via platform-emulator map. |
+| **PCSX2** | Planned | PS2 memcards / per-game folders. |
+| **PPSSPP** | Planned | PSP save data directory. |
+| **DuckStation** | Planned | PS1 memory cards. |
+| **Other standalone** | Not yet | Ryujinx, RPCS3, etc. — track per-emulator path rules as we expand sync. |
+
+**v1 scope:** RetroArch layouts only. Standalone emulators need explicit path rules before sync can find their saves.
+
+For **Android** save sync and launching, use **[Argosy](https://github.com/rommapp/argosy-launcher)** instead of RommDeck.
 
 ---
 
@@ -243,7 +260,6 @@ src/
   shared/          KMP library — RomM, downloads, sync, SQLite, ES-DE
   apps/desktop/    Compose Desktop app (Linux today; KMP-ready for more OSes)
   apps/syncd/      Background sync daemon (JVM)
-  apps/android/    Android stub (v0.2.0)
 data/              Platform and emulator slug maps
 packaging/systemd/ systemd user unit template (Linux)
 ```
@@ -303,12 +319,13 @@ Roadmap and design notes: [`RommDeck-plan.md`](RommDeck-plan.md).
 
 ## Limitations
 
-RommDeck does not upload ROMs to RomM, launch games, or pick RetroArch cores. **v0.1.0** is Linux-first with **RetroDECK** as the auto-detected platform and **ES-DE** as the frontend contract; other layouts use Settings → Target (**ES-DE home** when ROMs sit outside the frontend tree). **Android (v0.2.0):** RetroArch + ES-DE on device; **mandatory** Target paths (no auto-detect). A **Linux AppImage** is built via GitHub Actions; standalone-emulator save paths are planned for **v0.2.0** (macOS/Windows installers later).
+RommDeck does not upload ROMs to RomM, launch games, or pick RetroArch cores. **v0.1.0** is Linux-first with **RetroDECK** as the auto-detected platform and **ES-DE** as the frontend contract; other layouts use Settings → Target (**ES-DE home** when ROMs sit outside the frontend tree). See [Platform / emulator save status](#platform--emulator-save-status). **Android is out of scope** — use [Argosy](https://github.com/rommapp/argosy-launcher). A **Linux AppImage** is built via GitHub Actions; standalone-emulator save paths and macOS/Windows installers are later work.
 
 ---
 
 ## Acknowledgments
 
+- **[Argosy](https://github.com/rommapp/argosy-launcher)** — official RomM Android client. Prefer Argosy on phones/handhelds; RommDeck focuses on desktop RetroDECK / ES-DE.
 - **[Tender (romm-tender)](https://github.com/danielcopper/romm-tender)** by [danielcopper](https://github.com/danielcopper) — reference for understanding RomM’s Device Sync Protocol and save/state sync behavior. RommDeck is an independent RetroDECK / ES-DE companion and is not affiliated with Tender.
 
 ---
