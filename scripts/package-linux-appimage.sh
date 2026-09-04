@@ -77,6 +77,11 @@ if [[ ! -x "$COMPOSE_APP/syncd/bin/rommdeck-syncd" && ! -f "$COMPOSE_APP/syncd/b
   echo "Missing bundled syncd under $COMPOSE_APP/syncd" >&2
   exit 1
 fi
+if [[ ! -x "$COMPOSE_APP/syncd/runtime/bin/java" && ! -f "$COMPOSE_APP/syncd/runtime/bin/java" ]]; then
+  echo "Missing bundled syncd JRE at $COMPOSE_APP/syncd/runtime/bin/java" >&2
+  echo "systemd user services need a JRE copied into syncd/runtime (no Java on PATH)." >&2
+  exit 1
+fi
 
 STAGE="$(mktemp -d)"
 cleanup() { rm -rf "$STAGE"; }
@@ -114,6 +119,12 @@ EOF
 chmod +x "$APPDIR/AppRun"
 chmod +x "$APPDIR/rommdeck/bin/RommDeck" 2>/dev/null || true
 chmod +x "$APPDIR/rommdeck/syncd/bin/rommdeck-syncd" 2>/dev/null || true
+chmod +x "$APPDIR/rommdeck/syncd/runtime/bin/java" 2>/dev/null || true
+# Sanity: syncd must be able to start without AppImage mount / system JDK.
+if ! "$APPDIR/rommdeck/syncd/runtime/bin/java" -version >/dev/null 2>&1; then
+  echo "Bundled syncd JRE is not runnable: $APPDIR/rommdeck/syncd/runtime/bin/java" >&2
+  exit 1
+fi
 
 TOOL_DIR="${ROMMDECK_APPIMAGETOOL_DIR:-$HOME/.cache/rommdeck/appimagetool}"
 mkdir -p "$TOOL_DIR"

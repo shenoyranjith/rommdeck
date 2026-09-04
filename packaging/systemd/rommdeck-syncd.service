@@ -6,6 +6,8 @@ Wants=network-online.target
 [Service]
 Type=simple
 ExecStart=%h/.local/bin/rommdeck-syncd
+# Prefer a JRE copied into ~/.local/share/rommdeck/syncd/runtime (AppImage install).
+# Dev installs may also set Environment=JAVA_HOME=...
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal

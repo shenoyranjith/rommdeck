@@ -5,22 +5,48 @@ APP_HOME="$(cd "$(dirname "$0")/.." && pwd)"
 resolve_java() {
   if [[ -x "$APP_HOME/runtime/bin/java" ]]; then
     echo "$APP_HOME/runtime/bin/java"
-    return
+    return 0
   fi
   if [[ -n "${ROMMDECK_JAVA:-}" && -x "${ROMMDECK_JAVA}" ]]; then
     echo "$ROMMDECK_JAVA"
-    return
+    return 0
   fi
   if [[ -n "${ROMMDECK_APP_ROOT:-}" && -x "$ROMMDECK_APP_ROOT/lib/runtime/bin/java" ]]; then
     echo "$ROMMDECK_APP_ROOT/lib/runtime/bin/java"
-    return
+    return 0
   fi
   if [[ -n "${JAVA_HOME:-}" && -x "$JAVA_HOME/bin/java" ]]; then
     echo "$JAVA_HOME/bin/java"
-    return
+    return 0
   fi
-  command -v java
+  if command -v java >/dev/null 2>&1; then
+    command -v java
+    return 0
+  fi
+  return 1
 }
 
-JAVA_BIN="$(resolve_java)"
+if ! JAVA_BIN="$(resolve_java)"; then
+  cat >&2 <<EOF
+rommdeck-syncd: no Java runtime found.
+
+Looked for:
+  $APP_HOME/runtime/bin/java
+  \$ROMMDECK_JAVA
+  \$ROMMDECK_APP_ROOT/lib/runtime/bin/java
+  \$JAVA_HOME/bin/java
+  java on PATH
+
+systemd user services often have no JDK on PATH. Re-enable Auto-sync from the
+RommDeck AppImage so it copies a JRE into:
+  $APP_HOME/runtime/
+EOF
+  exit 127
+fi
+
+if [[ ! -d "$APP_HOME/lib" ]] || ! compgen -G "$APP_HOME/lib/*.jar" >/dev/null; then
+  echo "rommdeck-syncd: missing jars under $APP_HOME/lib" >&2
+  exit 127
+fi
+
 exec "$JAVA_BIN" -Dfile.encoding=UTF-8 -cp "$APP_HOME/lib/*" dev.rommdeck.syncd.MainKt "$@"

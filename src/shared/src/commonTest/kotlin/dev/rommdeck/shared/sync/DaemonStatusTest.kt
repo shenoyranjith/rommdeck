@@ -4,6 +4,7 @@ import dev.rommdeck.shared.config.DEFAULT_CONFIG
 import dev.rommdeck.shared.config.RommConfig
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class DaemonStatusTest {
@@ -54,6 +55,17 @@ class SystemdUnitTest {
         val text = systemdUnitText("/home/me/.local/bin/rommdeck-syncd")
         assertTrue(text.contains("ExecStart=/home/me/.local/bin/rommdeck-syncd"))
         assertTrue(text.contains("Restart=on-failure"))
+        assertFalse(text.contains("JAVA_HOME="))
+    }
+
+    @Test
+    fun unitCanPinJavaHomeForSystemd() {
+        val text = systemdUnitText(
+            "/home/me/.local/bin/rommdeck-syncd",
+            javaHome = "/usr/lib/jvm/java-21",
+        )
+        assertTrue(text.contains("Environment=JAVA_HOME=/usr/lib/jvm/java-21"))
+        assertTrue(text.contains("Environment=PATH=/usr/lib/jvm/java-21/bin:/usr/bin:/bin"))
     }
 
     @Test

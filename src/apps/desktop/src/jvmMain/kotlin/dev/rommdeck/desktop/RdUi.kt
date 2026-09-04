@@ -75,6 +75,20 @@ val RomGridBodyGap = 8.dp
 val RomGridActionHeight = 32.dp
 
 @Composable
+internal fun Modifier.rdFocusHalo(
+    interaction: MutableInteractionSource,
+    enabled: Boolean = true,
+): Modifier {
+    val c = Rd
+    val focused by interaction.collectIsFocusedAsState()
+    return if (focused && enabled) {
+        this.border(2.dp, c.accent, RectangleShape)
+    } else {
+        this
+    }
+}
+
+@Composable
 internal fun Modifier.rdInteractive(
     enabled: Boolean = true,
     onClick: () -> Unit,
@@ -88,6 +102,7 @@ internal fun Modifier.rdInteractive(
         .background(if (hovered && enabled) hoverBg else Color.Transparent, RectangleShape)
         .hoverable(interaction, enabled)
         .clickable(interaction, null, enabled, onClick = onClick)
+        .rdFocusHalo(interaction, enabled)
         .then(if (enabled) Modifier.pointerHoverIcon(PointerIcon.Hand) else Modifier)
 }
 
@@ -123,6 +138,8 @@ fun RdButton(
         primary -> c.accentFg
         else -> c.text
     }
+    val focused by interaction.collectIsFocusedAsState()
+    val focusBorder = if (focused && enabled) c.accent else border
     Row(
         modifier
             .height(if (compact) RomGridActionHeight else RdControlHeight)
@@ -134,7 +151,7 @@ fun RdButton(
                     drawRect(c.accent.copy(alpha = if (hovered && enabled) 0.36f else 0.28f))
                 } else Modifier,
             )
-            .border(1.dp, border, RectangleShape)
+            .border(if (focused && enabled) 2.dp else 1.dp, focusBorder, RectangleShape)
             .background(bg, RectangleShape)
             .padding(horizontal = if (compact) 10.dp else 12.dp)
             .then(if (enabled) Modifier else Modifier.alpha(0.4f)),
@@ -163,6 +180,7 @@ fun RdIconButton(
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
     val buttonSize = if (compact) 28.dp else RdControlHeight
+    val focused by interaction.collectIsFocusedAsState()
     Box(
         modifier
             .size(buttonSize)
@@ -174,7 +192,11 @@ fun RdIconButton(
                     drawRect(c.accent.copy(alpha = 0.28f))
                 } else Modifier,
             )
-            .border(1.dp, if (selected || hovered) c.accent else c.accent.copy(alpha = 0.7f), RectangleShape)
+            .border(
+                if (focused && enabled) 2.dp else 1.dp,
+                if (selected || hovered || focused) c.accent else c.accent.copy(alpha = 0.7f),
+                RectangleShape,
+            )
             .background(
                 when {
                     selected -> c.accent
@@ -216,6 +238,7 @@ fun RdField(
         }
         val interaction = remember { MutableInteractionSource() }
         val focused by interaction.collectIsFocusedAsState()
+        TrackTextInputFocus(focused)
         Row(
             Modifier
                 .fillMaxWidth()
@@ -382,6 +405,7 @@ fun RdNavItem(
     val c = Rd
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
+    val focused by interaction.collectIsFocusedAsState()
     val iconTint = if (selected) c.accent else c.text
     Row(
         Modifier
@@ -392,14 +416,21 @@ fun RdNavItem(
             .background(
                 when {
                     selected -> c.accent.copy(alpha = 0.15f)
+                    focused -> c.accent.copy(alpha = 0.10f)
                     hovered -> c.bg2.copy(alpha = 0.6f)
                     else -> Color.Transparent
                 },
                 RectangleShape,
             )
             .then(
-                if (selected) Modifier.border(1.dp, c.accent, RectangleShape)
-                else Modifier.border(1.dp, Color.Transparent, RectangleShape),
+                when {
+                    selected || focused -> Modifier.border(
+                        if (focused) 2.dp else 1.dp,
+                        c.accent,
+                        RectangleShape,
+                    )
+                    else -> Modifier.border(1.dp, Color.Transparent, RectangleShape)
+                },
             )
             .height(if (compact) 40.dp else 52.dp),
         verticalAlignment = Alignment.CenterVertically,

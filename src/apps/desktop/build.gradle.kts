@@ -6,6 +6,7 @@ plugins {
 
 import org.gradle.api.tasks.JavaExec
 import java.nio.file.Files
+import java.nio.file.Path
 
 val appVersion = providers.gradleProperty("rommdeck.version").orElse("0.1.0")
 val desktopPackageName = "RommDeck"
@@ -114,17 +115,100 @@ val bundleSyncdIntoDistributable by tasks.registering(Copy::class) {
     into(distributableAppDir.map { it.dir("syncd") })
 }
 
+/**
+ * Compose/jpackage `lib/runtime` is a jlink image **without** `bin/java` (the native
+ * RommDeck launcher embeds the JVM). Syncd needs a normal `java` launcher for systemd,
+ * so we jlink a real runtime into `syncd/runtime` at package time.
+ */
+val bundleRuntimeIntoSyncd by tasks.registering {
+    group = "distribution"
+    description = "jlink a JRE with bin/java into syncd/runtime for systemd"
+    dependsOn(bundleSyncdIntoDistributable)
+
+    val syncdRuntime = distributableAppDir.map { it.dir("syncd/runtime") }
+    val composeRuntimeRelease = distributableAppDir.map { it.file("lib/runtime/release") }
+    outputs.dir(syncdRuntime)
+    inputs.file(composeRuntimeRelease)
+
+    doLast {
+        val outDir = syncdRuntime.get().asFile.toPath()
+        if (Files.exists(outDir)) {
+            outDir.toFile().deleteRecursively()
+        }
+        Files.createDirectories(outDir.parent)
+
+        val javaHome = Path.of(System.getProperty("java.home"))
+        val jmods = javaHome.resolve("jmods")
+        check(Files.isDirectory(jmods)) {
+            "Packaging needs a full JDK with jmods (java.home=$javaHome). Set JAVA_HOME to a JDK, not a JRE."
+        }
+        val jlink = javaHome.resolve("bin").resolve("jlink").takeIf { Files.isRegularFile(it) }
+            ?: Path.of("jlink")
+
+        // Prefer the same module set Compose used; fall back to a practical syncd set.
+        val releaseFile = composeRuntimeRelease.get().asFile
+        val modules = if (releaseFile.isFile) {
+            releaseFile.readLines()
+                .firstOrNull { it.startsWith("MODULES=") }
+                ?.removePrefix("MODULES=")
+                ?.trim('"')
+                ?.split(Regex("\\s+"))
+                ?.filter { it.isNotBlank() }
+                ?.joinToString(",")
+        } else {
+            null
+        } ?: listOf(
+            "java.base",
+            "java.logging",
+            "java.management",
+            "java.naming",
+            "java.net.http",
+            "java.sql",
+            "java.xml",
+            "java.desktop",
+            "java.security.jgss",
+            "jdk.crypto.ec",
+            "jdk.crypto.cryptoki",
+            "jdk.unsupported",
+        ).joinToString(",")
+
+        val cmd = listOf(
+            jlink.toString(),
+            "--module-path", jmods.toString(),
+            "--add-modules", modules,
+            "--output", outDir.toString(),
+            "--strip-debug",
+            "--no-header-files",
+            "--no-man-pages",
+        )
+        logger.lifecycle("jlink syncd runtime: $cmd")
+        val proc = ProcessBuilder(cmd).inheritIO().start()
+        val code = proc.waitFor()
+        check(code == 0) { "jlink failed with exit code $code" }
+
+        val javaBin = outDir.resolve("bin").resolve("java")
+        check(Files.isRegularFile(javaBin)) { "jlink output missing $javaBin" }
+        javaBin.toFile().setExecutable(true, false)
+        logger.lifecycle("Bundled syncd JRE at $javaBin")
+    }
+}
+
 tasks.register("prepareLinuxAppImageContents") {
     group = "distribution"
-    description = "Build Compose app image and bundle syncd (input for AppImage packaging)"
-    dependsOn(bundleSyncdIntoDistributable)
+    description = "Build Compose app image and bundle syncd + JRE (input for AppImage packaging)"
+    dependsOn(bundleRuntimeIntoSyncd)
     doLast {
         val appDir = distributableAppDir.get().asFile
         check(appDir.isDirectory) { "Missing Compose app image at $appDir" }
         val syncdBin = appDir.resolve("syncd/bin/rommdeck-syncd")
         check(syncdBin.isFile) { "Missing bundled syncd launcher at $syncdBin" }
+        val syncdJava = appDir.resolve("syncd/runtime/bin/java")
+        check(syncdJava.isFile) { "Missing bundled syncd JRE at $syncdJava" }
         if (!Files.isExecutable(syncdBin.toPath())) {
             syncdBin.setExecutable(true, false)
+        }
+        if (!Files.isExecutable(syncdJava.toPath())) {
+            syncdJava.setExecutable(true, false)
         }
         logger.lifecycle("Packaged app tree ready at $appDir")
     }

@@ -16,7 +16,7 @@ RommDeck does not install emulators or configure RetroArch cores. Tools like Emu
 
 **Android:** use **[Argosy](https://github.com/rommapp/argosy-launcher)** — the RomM project’s native Android client for syncing, installing, and launching on phones/handhelds. RommDeck is the **desktop** RetroDECK / ES-DE companion and does not ship an Android app.
 
-Built with **Kotlin Multiplatform** and **Compose**. Targets **RomM 5.x**. **v0.1.1** ships a **Linux** app (AppImage or run from source); macOS and Windows desktop are later.
+Built with **Kotlin Multiplatform** and **Compose**. Targets **RomM 5.x**. **v0.1.3** ships a **Linux** app (AppImage or run from source); macOS and Windows desktop are later.
 > **Disclaimer:** RommDeck is a spare-time project built with help from AI coding tools. Expect rough edges; treat it as experimental and back up saves before enabling sync.
 
 ---
@@ -85,6 +85,7 @@ Config and library data live in `~/.config/rommdeck/` and `~/.local/share/rommde
 - **Sync Now** — manual sync from the app
 - **Background daemon** — `rommdeck-syncd` (Linux: systemd user service) — interval poll, startup sync, filesystem watch on save folders
 - **One-click enable** — Settings installs and starts the daemon on Linux; no manual unit setup in normal use
+- **Bundled JRE for syncd** — AppImage installs copy a Java runtime into `~/.local/share/rommdeck/syncd/runtime` so the systemd user service works without a system JDK
 - **Battery saves and save states** — RetroArch layout under your configured save/state roots (`.srm`, `.state`, `.state0`–`.state9`, …)
 - **Two-way, download-only, and upload-only** — directional sync enforced locally; RomM device registration uses supported API modes
 - **Conflict policies** — `keep_both`, `server_wins`, or `device_wins`; same policy for manual and auto sync
@@ -97,6 +98,7 @@ Config and library data live in `~/.config/rommdeck/` and `~/.local/share/rommde
 - **Themes** — candy, gold, vector, mint with optional CRT scanline overlay
 - **Structured logging** — configurable debug/info/warn/error
 - **Arcade-style shell** — sidebar navigation, accent frame, custom window controls
+- **Controller / keyboard nav** — D-pad or arrows move focus; **LB/RB** or PageUp/PageDown switch tabs; **A**/Enter activates; **B**/Escape cancels dialogs (also works when Steam Input maps a pad to keys)
 
 ---
 
@@ -249,6 +251,28 @@ Override config/data dirs: `ROMMDECK_CONFIG_DIR`, `ROMMDECK_DATA_DIR`.
 
 RomM or auto-sync settings changes restart a running `rommdeck-syncd` so path and interval updates take effect.
 
+### Auto-sync service troubleshooting (Linux)
+
+If `rommdeck-syncd.service` exits immediately and `~/.local/share/rommdeck/logs/rommdeck.log` has no daemon lines, the launcher usually failed **before** Java started (most often: no JRE under systemd’s PATH).
+
+```bash
+# What systemd saw:
+journalctl --user -u rommdeck-syncd.service -n 50 --no-pager
+
+# Run the same binary by hand:
+~/.local/bin/rommdeck-syncd
+# Expect either "rommdeck-syncd starting" in the log, or a clear "no Java runtime found" error.
+
+ls -la ~/.local/share/rommdeck/syncd/runtime/bin/java
+```
+
+Fix: open the RommDeck AppImage → Settings → Auto-sync → disable then enable (reinstalls syncd and copies a JRE into `~/.local/share/rommdeck/syncd/runtime`), then:
+
+```bash
+systemctl --user restart rommdeck-syncd.service
+systemctl --user status rommdeck-syncd.service
+```
+
 ---
 
 ## Development
@@ -319,7 +343,7 @@ Roadmap and design notes: [`RommDeck-plan.md`](RommDeck-plan.md).
 
 ## Limitations
 
-RommDeck does not upload ROMs to RomM, launch games, or pick RetroArch cores. **v0.1.1** is Linux-first with **RetroDECK** as the auto-detected platform and **ES-DE** as the frontend contract; other layouts use Settings → Target (**ES-DE home** when ROMs sit outside the frontend tree). See [Platform / emulator save status](#platform--emulator-save-status). **Android is out of scope** — use [Argosy](https://github.com/rommapp/argosy-launcher). A **Linux AppImage** is built via GitHub Actions; standalone-emulator save paths and macOS/Windows installers are later work.
+RommDeck does not upload ROMs to RomM, launch games, or pick RetroArch cores. **v0.1.3** is Linux-first with **RetroDECK** as the auto-detected platform and **ES-DE** as the frontend contract; other layouts use Settings → Target (**ES-DE home** when ROMs sit outside the frontend tree). See [Platform / emulator save status](#platform--emulator-save-status). **Android is out of scope** — use [Argosy](https://github.com/rommapp/argosy-launcher). A **Linux AppImage** is built via GitHub Actions; standalone-emulator save paths and macOS/Windows installers are later work.
 
 ---
 

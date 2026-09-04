@@ -31,7 +31,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,8 +41,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusManager
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -117,9 +121,11 @@ fun ApplicationScope.RommDeckApplication() {
     val queue = remember { SessionDownloadQueue() }
     val activity = remember { AppActivityState() }
     val confirm = remember { ConfirmController() }
+    val textInputFocus = remember { TextInputFocusTracker() }
     val appScope = rememberCoroutineScope()
     var showQuitConfirm by remember { mutableStateOf(false) }
     var quitting by remember { mutableStateOf(false) }
+    var tab by remember { mutableStateOf(NavTab.LIBRARY) }
     val scale = uiScale()
     val screen = try {
         Toolkit.getDefaultToolkit().screenSize
@@ -145,32 +151,84 @@ fun ApplicationScope.RommDeckApplication() {
         title = "RommDeck",
         icon = rememberAppIconPainter(),
         state = rememberWindowState(width = width.dp, height = height.dp),
-    ) {
-        Box(Modifier.fillMaxSize()) {
-            AppRoot(queue = queue, confirm = confirm, activity = activity)
-            ConfirmHost(confirm)
-            if (showQuitConfirm) {
-                RdConfirmDialog(
-                    request = ConfirmRequest(
-                        title = quitConfirmTitle(queue, activity),
-                        message = "RommDeck still has work in progress.",
-                        detail = quitConfirmDetail(queue, activity),
-                        confirmLabel = "Quit anyway",
-                        cancelLabel = "Stay",
-                        tone = ConfirmTone.WARNING,
-                    ),
-                    onConfirm = {
-                        showQuitConfirm = false
-                        appScope.launch {
-                            performAppQuit(queue, activity)
-                            quitting = true
-                            exitApplication()
+        onPreviewKeyEvent = { event ->
+            // FocusManager is resolved inside content; use a holder updated each frame.
+            val focusManager = controllerFocusManager ?: return@Window false
+            val dialogOpen = showQuitConfirm || confirm.request != null
+            handleControllerKey(
+                event = event,
+                textInputActive = textInputFocus.active,
+                dialogOpen = dialogOpen,
+                focusManager = focusManager,
+                onPrevTab = { tab = cycleNavTab(tab, -1) },
+                onNextTab = { tab = cycleNavTab(tab, 1) },
+                onDialogConfirm = {
+                    when {
+                        showQuitConfirm -> {
+                            showQuitConfirm = false
+                            appScope.launch {
+                                performAppQuit(queue, activity)
+                                quitting = true
+                                exitApplication()
+                            }
                         }
-                    },
-                    onCancel = { showQuitConfirm = false },
+                        confirm.request != null -> confirm.respond(true)
+                    }
+                },
+                onDialogCancel = {
+                    when {
+                        showQuitConfirm -> showQuitConfirm = false
+                        confirm.request != null -> confirm.respond(false)
+                    }
+                },
+            )
+        },
+    ) {
+        CompositionLocalProvider(LocalTextInputFocus provides textInputFocus) {
+            ControllerFocusBinder()
+            Box(Modifier.fillMaxSize()) {
+                AppRoot(
+                    queue = queue,
+                    confirm = confirm,
+                    activity = activity,
+                    tab = tab,
+                    onTabChange = { tab = it },
                 )
+                ConfirmHost(confirm)
+                if (showQuitConfirm) {
+                    RdConfirmDialog(
+                        request = ConfirmRequest(
+                            title = quitConfirmTitle(queue, activity),
+                            message = "RommDeck still has work in progress.",
+                            detail = quitConfirmDetail(queue, activity),
+                            confirmLabel = "Quit anyway",
+                            cancelLabel = "Stay",
+                            tone = ConfirmTone.WARNING,
+                        ),
+                        onConfirm = {
+                            showQuitConfirm = false
+                            appScope.launch {
+                                performAppQuit(queue, activity)
+                                quitting = true
+                                exitApplication()
+                            }
+                        },
+                        onCancel = { showQuitConfirm = false },
+                    )
+                }
             }
         }
+    }
+}
+
+/** Updated each composition so Window-level key handling can move focus. */
+private var controllerFocusManager: FocusManager? = null
+
+@Composable
+private fun ControllerFocusBinder() {
+    val focusManager = LocalFocusManager.current
+    SideEffect {
+        controllerFocusManager = focusManager
     }
 }
 
@@ -179,12 +237,13 @@ fun AppRoot(
     queue: SessionDownloadQueue,
     confirm: ConfirmController,
     activity: AppActivityState,
+    tab: NavTab,
+    onTabChange: (NavTab) -> Unit,
 ) {
     val repo = remember { createConfigRepository() }
     var config by remember { mutableStateOf(repo.load()) }
     val paths = remember(config.playTarget) { resolvePlayPaths(config.playTarget) }
     val appScope = rememberCoroutineScope()
-    var tab by remember { mutableStateOf(NavTab.LIBRARY) }
     var settingsSection by remember { mutableStateOf(SettingsSection.APPEARANCE) }
     var stats by remember { mutableStateOf(loadLibraryStats()) }
     var totalRoms by remember { mutableStateOf(0) }
@@ -260,7 +319,7 @@ fun AppRoot(
                     SidebarColumn(
                         selected = tab,
                         queue = queue,
-                        onSelect = { tab = it },
+                        onSelect = onTabChange,
                     )
                     Column(
                         Modifier
@@ -303,7 +362,7 @@ fun AppRoot(
                                             queue = queue,
                                             rommBaseUrl = config.romm.baseUrl,
                                             apiToken = config.romm.apiToken,
-                                            onOpenLibrary = { tab = NavTab.LIBRARY },
+                                            onOpenLibrary = { onTabChange(NavTab.LIBRARY) },
                                             onStartPump = {
                                                 queue.startPump(config, paths) {
                                                     stats = loadLibraryStats()
@@ -317,7 +376,7 @@ fun AppRoot(
                                             onConfigReloaded = { config = repo.load() },
                                             onOpenAutoSync = {
                                                 settingsSection = SettingsSection.AUTO_SYNC
-                                                tab = NavTab.SETTINGS
+                                                onTabChange(NavTab.SETTINGS)
                                             },
                                         )
                                         NavTab.SETTINGS -> SettingsScreen(

@@ -43,7 +43,9 @@ fun ensureInstalledSyncdMatchesApp(appVersion: String): SyncdRefreshResult {
     }
 
     val previous = readInstalledSyncdVersion()
-    if (!syncdNeedsRefresh(appVersion, previous)) {
+    val needsVersionRefresh = syncdNeedsRefresh(appVersion, previous)
+    val needsRuntimeRepair = !isSyncdJavaRuntimeReady()
+    if (!needsVersionRefresh && !needsRuntimeRepair) {
         return SyncdRefreshResult(
             SyncdRefreshStatus.SKIPPED,
             "Sync daemon is up to date",
@@ -60,6 +62,7 @@ fun ensureInstalledSyncdMatchesApp(appVersion: String): SyncdRefreshResult {
             "installed" to (previous ?: "none"),
             "app" to appVersion,
             "wasRunning" to wasRunning,
+            "runtimeRepair" to needsRuntimeRepair,
         ),
     )
 
@@ -76,7 +79,7 @@ fun ensureInstalledSyncdMatchesApp(appVersion: String): SyncdRefreshResult {
     val stamped = normalizeSyncdVersion(appVersion) ?: appVersion
     writeSyncdInstallManifest(syncdInstallDir(), stamped)
 
-    if (wasRunning) {
+    if (wasRunning || needsRuntimeRepair) {
         val restart = controlAutoSyncService(AutoSyncAction.RESTART)
         if (!restart.ok) {
             return SyncdRefreshResult(
@@ -91,7 +94,8 @@ fun ensureInstalledSyncdMatchesApp(appVersion: String): SyncdRefreshResult {
 
     return SyncdRefreshResult(
         SyncdRefreshStatus.UPDATED,
-        "Updated sync daemon to v$stamped",
+        if (needsRuntimeRepair) "Repaired sync daemon runtime (v$stamped)"
+        else "Updated sync daemon to v$stamped",
         previousVersion = previous,
         version = stamped,
     )
