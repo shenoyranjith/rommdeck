@@ -8,13 +8,28 @@ RommDeck connects **[RomM](https://github.com/rommapp/romm)** (your self-hosted 
 
 | Layer | What RommDeck treats it as |
 | --- | --- |
-| **[RetroDECK](https://retrodeck.net/)** | Supported **platform** — known folder layout; auto-detected on Linux via `retrodeck.json` when Target paths are empty |
-| **ES-DE** | Supported **frontend** — gamelist.xml + `downloaded_media` conventions (ES-DE does not install emulators itself) |
-| **Anything else** (EmuDeck, plain ES-DE, custom trees) | Works if you set ROM / save / state folders in **Settings → Target** — and **ES-DE home** when the frontend tree is separate from ROMs (typical official ES-DE) |
+| **[RetroDECK](https://retrodeck.net/)** | Supported **platform** (Linux desktop) — known folder layout; auto-detected via `retrodeck.json` when Target paths are empty |
+| **ES-DE** | Supported **frontend** — gamelist.xml + `downloaded_media` (ES-DE does not install emulators itself) |
+| **Manual Target** (desktop) | Plain ES-DE, EmuDeck, custom — set **ES-DE home** + ROM / save / state when not using RetroDECK auto-detect |
+| **Android (v0.2.0)** | **RetroArch + ES-DE on device** — user installs emulators; **all Target paths mandatory** (no auto-detect); app blocked until configured |
 
 RommDeck does not install emulators or configure RetroArch cores. Tools like EmuDeck set those up; RommDeck only needs the library folders.
 
 Built with **Kotlin Multiplatform** and **Compose**. Targets **RomM 5.x**. **v0.1.0** ships a **Linux** app (AppImage or run from source); macOS, Windows, and Android are planned.
+
+> **Disclaimer:** RommDeck is a spare-time project built with help from AI coding tools. Expect rough edges; treat it as experimental and back up saves before enabling sync.
+
+---
+
+## Screenshots
+
+| Library | Downloads |
+| --- | --- |
+| ![Library](docs/screenshots/library.png) | ![Downloads](docs/screenshots/downloads.png) |
+
+| Sync | Settings |
+| --- | --- |
+| ![Sync](docs/screenshots/sync.png) | ![Settings](docs/screenshots/settings.png) |
 
 ---
 
@@ -288,7 +303,7 @@ Roadmap and design notes: [`RommDeck-plan.md`](RommDeck-plan.md).
 
 ## Limitations
 
-RommDeck does not upload ROMs to RomM, launch games, or pick RetroArch cores. **v0.1.0** is Linux-first with **RetroDECK** as the auto-detected platform and **ES-DE** as the frontend contract; other layouts use Settings → Target (**ES-DE home** when ROMs sit outside the frontend tree). A **Linux AppImage** is built via GitHub Actions; Android and standalone-emulator save paths are planned for **v0.2.0** (macOS/Windows installers later).
+RommDeck does not upload ROMs to RomM, launch games, or pick RetroArch cores. **v0.1.0** is Linux-first with **RetroDECK** as the auto-detected platform and **ES-DE** as the frontend contract; other layouts use Settings → Target (**ES-DE home** when ROMs sit outside the frontend tree). **Android (v0.2.0):** RetroArch + ES-DE on device; **mandatory** Target paths (no auto-detect). A **Linux AppImage** is built via GitHub Actions; standalone-emulator save paths are planned for **v0.2.0** (macOS/Windows installers later).
 
 ---
 

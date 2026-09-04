@@ -48,19 +48,26 @@ data class RommConfig(
 /** Library paths for Settings → Target (RetroDECK platform or manual folders). */
 @Serializable
 data class PlayTargetConfig(
-    /** Path to retrodeck.json; empty = auto-detect on Linux when RetroDECK is installed. */
+    /** Path to retrodeck.json; empty = auto-detect on Linux when RetroDECK is installed. Ignored on Android. */
     val configPath: String = "",
     val romsPath: String = "",
     val savesPath: String = "",
     val statesPath: String = "",
     /**
      * ES-DE frontend home (directory that contains `gamelists/` and `downloaded_media/`).
-     * Empty = derive from RetroDECK home or from the ROMs folder parent.
-     * Needed when ROMs live outside the ES-DE tree (typical official ES-DE install).
+     * Empty = derive from RetroDECK home or from the ROMs folder parent (desktop only).
+     * **Required on Android** together with ROM / save / state paths.
      */
     val esdeHomePath: String = "",
     val syncMetadataOnDownload: Boolean = true,
-)
+) {
+    /** All Target paths set — required before library/sync on Android. */
+    fun isMandatoryTargetComplete(): Boolean =
+        esdeHomePath.isNotBlank() &&
+            romsPath.isNotBlank() &&
+            savesPath.isNotBlank() &&
+            statesPath.isNotBlank()
+}
 
 @Serializable
 data class SyncConfig(

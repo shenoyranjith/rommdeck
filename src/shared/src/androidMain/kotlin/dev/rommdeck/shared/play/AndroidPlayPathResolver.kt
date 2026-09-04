@@ -1,23 +1,31 @@
 package dev.rommdeck.shared.play
 
 import dev.rommdeck.shared.config.PlayTargetConfig
+import dev.rommdeck.shared.esde.resolveEsdeLayout
 
-actual fun resolvePlayPaths(playTarget: PlayTargetConfig): ResolvedPlayPaths =
-    ResolvedPlayPaths(
+/**
+ * Android: RetroArch + ES-DE on device. No RetroDECK, no auto-detect — user must set all Target paths.
+ */
+actual fun resolvePlayPaths(playTarget: PlayTargetConfig): ResolvedPlayPaths {
+    if (!playTarget.isMandatoryTargetComplete()) {
+        return ResolvedPlayPaths(
+            romsPath = playTarget.romsPath,
+            savesPath = playTarget.savesPath,
+            statesPath = playTarget.statesPath,
+            downloadedMediaPath = "",
+            esdeHomePath = playTarget.esdeHomePath,
+            retrodeckJsonPath = "",
+            source = PathSource.UNCONFIGURED,
+        )
+    }
+    val esdeHome = playTarget.esdeHomePath
+    return ResolvedPlayPaths(
         romsPath = playTarget.romsPath,
         savesPath = playTarget.savesPath,
         statesPath = playTarget.statesPath,
-        downloadedMediaPath = "",
-        esdeHomePath = playTarget.esdeHomePath,
+        downloadedMediaPath = resolveEsdeLayout(esdeHome).mediaRoot,
+        esdeHomePath = esdeHome,
         retrodeckJsonPath = "",
-        source = if (
-            playTarget.romsPath.isBlank() &&
-            playTarget.savesPath.isBlank() &&
-            playTarget.statesPath.isBlank() &&
-            playTarget.esdeHomePath.isBlank()
-        ) {
-            PathSource.UNCONFIGURED
-        } else {
-            PathSource.MANUAL
-        },
+        source = PathSource.MANUAL,
     )
+}

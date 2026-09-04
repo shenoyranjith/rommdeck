@@ -5,9 +5,9 @@ enum class PathSource {
     RETRODECK_AUTO,
     /** Best-effort ES-DE-style tree when RetroDECK is absent (not a first-class platform). */
     ESDE_AUTO,
-    /** User-set ROM / save / state paths (EmuDeck, plain ES-DE, custom, …). */
+    /** User-set ROM / save / state paths (EmuDeck, plain ES-DE, custom, Android). */
     MANUAL,
-    /** No RetroDECK detect and no manual paths. */
+    /** Required paths missing (Android always starts here until user configures Target). */
     UNCONFIGURED,
 }
 
