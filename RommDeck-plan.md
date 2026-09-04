@@ -1,6 +1,6 @@
 ---
 name: RommDeck
-overview: 'RomM ↔ RetroDECK platform (ES-DE frontend) on Linux desktop. Android client cancelled — use Argosy. v0.2.0: standalone sync, multi-save, play sessions. macOS/Windows deferred.'
+overview: 'RomM ↔ RetroDECK platform (ES-DE frontend) on Linux desktop. v0.1.1: Target clarity + drop Android (use Argosy). v0.2.0: standalone sync, multi-save, play sessions. macOS/Windows deferred.'
 todos:
   - id: packaging-linux
     content: 'Linux AppImage via GitHub Actions + ROMMDECK_APP_ROOT/syncd bundle'
@@ -46,24 +46,26 @@ Save sync reference: [romm-tender](https://github.com/danielcopper/romm-tender).
 
 ---
 
-## Done (v0.1.0 + Target clarity)
+## Done (v0.1.0)
 
 - **RomM library** browse/download, ES-DE gamelist + media
 - **Save/state sync** (Device Sync Protocol) + Linux `rommdeck-syncd`
 - **Path resolution** ([`JvmPlayPathResolver.kt`](src/shared/src/jvmMain/kotlin/dev/rommdeck/shared/play/JvmPlayPathResolver.kt)):
   - RetroDECK via `retrodeck.json` (Linux, when Target paths empty)
   - Manual Target paths for any layout (EmuDeck, plain ES-DE, custom)
-  - Explicit **ES-DE home** when ROMs live outside the frontend tree
   - Heuristic plain-ES-DE auto-detect exists as a fallback (not the product focus)
 - **ES-DE frontend layout** for gamelist + media ([`EsdePaths.kt`](src/shared/src/commonMain/kotlin/dev/rommdeck/shared/esde/EsdePaths.kt))
 - **Linux AppImage** packaging + syncd version stamp / startup refresh
-- **Target clarity** — RetroDECK platform / ES-DE frontend framing, Settings copy, ES-DE home
+
+## Done (v0.1.1)
+
+- **Target clarity** — RetroDECK platform / ES-DE frontend framing, Settings copy, explicit **ES-DE home**
+- **Android client dropped** — recommend [Argosy](https://github.com/rommapp/argosy-launcher); JVM-only KMP build
 
 Known gaps / deferred:
 
 - Plain-ES-DE auto-detect is lightly tested (acceptable as a fallback, not a supported platform)
 - macOS/Windows desktop app not shipped (deferred)
-- Android client cancelled (use Argosy)
 
 ---
 
@@ -71,26 +73,18 @@ Known gaps / deferred:
 
 Suggested order (desktop sync breadth):
 
-### 1. Target clarity — done on `v0.2.0` branch
-
-RetroDECK platform / ES-DE frontend framing, Settings copy, **ES-DE home** for official ES-DE layouts.
-
-### 2. Android app — cancelled
-
-Not shipping. For Android, use **[Argosy](https://github.com/rommapp/argosy-launcher)**.
-
-### 3. Standalone sync
+### 1. Standalone sync
 
 Extend save/state sync beyond RetroArch-default layouts on desktop.
 
 - Per-emulator path rules in `platform-emulator-map.json` (`dolphin`, `pcsx2`, `ppsspp`, …)
 - Keep the README [Platform / emulator save status](README.md#platform--emulator-save-status) table updated as support lands
 
-### 4. Multi-save
+### 2. Multi-save
 
 - Multi-save directories, `.m3u` set ROMs, zip-aware `content_hash`
 
-### 5. Play sessions
+### 3. Play sessions
 
 - Ingest play sessions on sync `completeSession`
 
@@ -106,7 +100,7 @@ Extend save/state sync beyond RetroArch-default layouts on desktop.
 | Piece | Role |
 | --- | --- |
 | `src/shared` | KMP library — RomM client, downloads, SQLite index, ES-DE writer, sync engine, path resolution |
-| `src/apps/desktop` | Compose Desktop app (**Linux** in v0.1.0) |
+| `src/apps/desktop` | Compose Desktop app (**Linux** in v0.1.1) |
 | `src/apps/syncd` | Background sync JVM sidecar |
 
 `shared/commonMain` is the cross-platform core; desktop and syncd add UI and OS services.

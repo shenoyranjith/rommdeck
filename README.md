@@ -16,7 +16,7 @@ RommDeck does not install emulators or configure RetroArch cores. Tools like Emu
 
 **Android:** use **[Argosy](https://github.com/rommapp/argosy-launcher)** — the RomM project’s native Android client for syncing, installing, and launching on phones/handhelds. RommDeck is the **desktop** RetroDECK / ES-DE companion and does not ship an Android app.
 
-Built with **Kotlin Multiplatform** and **Compose**. Targets **RomM 5.x**. **v0.1.0** ships a **Linux** app (AppImage or run from source); macOS and Windows desktop are later.
+Built with **Kotlin Multiplatform** and **Compose**. Targets **RomM 5.x**. **v0.1.1** ships a **Linux** app (AppImage or run from source); macOS and Windows desktop are later.
 > **Disclaimer:** RommDeck is a spare-time project built with help from AI coding tools. Expect rough edges; treat it as experimental and back up saves before enabling sync.
 
 ---
@@ -319,7 +319,7 @@ Roadmap and design notes: [`RommDeck-plan.md`](RommDeck-plan.md).
 
 ## Limitations
 
-RommDeck does not upload ROMs to RomM, launch games, or pick RetroArch cores. **v0.1.0** is Linux-first with **RetroDECK** as the auto-detected platform and **ES-DE** as the frontend contract; other layouts use Settings → Target (**ES-DE home** when ROMs sit outside the frontend tree). See [Platform / emulator save status](#platform--emulator-save-status). **Android is out of scope** — use [Argosy](https://github.com/rommapp/argosy-launcher). A **Linux AppImage** is built via GitHub Actions; standalone-emulator save paths and macOS/Windows installers are later work.
+RommDeck does not upload ROMs to RomM, launch games, or pick RetroArch cores. **v0.1.1** is Linux-first with **RetroDECK** as the auto-detected platform and **ES-DE** as the frontend contract; other layouts use Settings → Target (**ES-DE home** when ROMs sit outside the frontend tree). See [Platform / emulator save status](#platform--emulator-save-status). **Android is out of scope** — use [Argosy](https://github.com/rommapp/argosy-launcher). A **Linux AppImage** is built via GitHub Actions; standalone-emulator save paths and macOS/Windows installers are later work.
 
 ---
 
