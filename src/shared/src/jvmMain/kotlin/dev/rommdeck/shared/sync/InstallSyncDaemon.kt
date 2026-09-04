@@ -19,6 +19,13 @@ actual fun isAutoSyncServiceInstalled(): Boolean = when (currentOs()) {
     DesktopOs.OTHER -> false
 }
 
+/** True when syncd can start a JVM without relying on systemd PATH. */
+actual fun isSyncdJavaRuntimeReady(): Boolean {
+    val bundled = Path.of(AppPaths.dataDir(), "syncd", "runtime")
+    if (hasJavaRuntime(bundled)) return true
+    return systemJavaHomeForService() != null
+}
+
 actual fun installAutoSyncService(): ServiceCommandResult {
     val dist = resolveInstallDist()
         ?: return ServiceCommandResult(
@@ -42,7 +49,24 @@ actual fun installAutoSyncService(): ServiceCommandResult {
     }
     makeExecutable(execPath)
     val wrapper = writeLauncher(execPath)
-    return writeOsService(wrapper ?: execPath)
+    val serviceJavaHome = if (hasJavaRuntime(dest.resolve("runtime"))) {
+        null
+    } else {
+        systemJavaHomeForService()
+    }
+    if (currentOs() == DesktopOs.LINUX &&
+        !hasJavaRuntime(dest.resolve("runtime")) &&
+        serviceJavaHome == null
+    ) {
+        return ServiceCommandResult(
+            false,
+            "Could not bundle a JRE into $dest/runtime and no system JAVA_HOME is usable. " +
+                "The systemd user service has no Java on PATH, so syncd exits immediately. " +
+                "Run RommDeck from the AppImage (or a packaged install) and enable Auto-sync again, " +
+                "or install a JDK and re-enable Auto-sync so JAVA_HOME is written into the unit.",
+        )
+    }
+    return writeOsService(wrapper ?: execPath, javaHome = serviceJavaHome)
 }
 
 actual fun controlAutoSyncService(action: AutoSyncAction): ServiceCommandResult {
@@ -86,11 +110,14 @@ internal fun macPlistPath(): Path =
 
 internal fun sidecarExecPath(installDir: Path): Path = AppInstallLayout.sidecarExec(installDir)
 
-private fun writeOsService(execStart: Path): ServiceCommandResult = when (currentOs()) {
+private fun writeOsService(execStart: Path, javaHome: String? = null): ServiceCommandResult = when (currentOs()) {
     DesktopOs.LINUX -> {
         val unit = linuxUnitPath()
         Files.createDirectories(unit.parent)
-        Files.writeString(unit, systemdUnitText(execStart.toAbsolutePath().toString()))
+        Files.writeString(
+            unit,
+            systemdUnitText(execStart.toAbsolutePath().toString(), javaHome = javaHome),
+        )
         val reload = runCommand("systemctl", "--user", "daemon-reload")
         if (!reload.ok) {
             ServiceCommandResult(true, "Installed unit at $unit (daemon-reload: ${reload.output})")
@@ -185,7 +212,8 @@ internal fun resolveInstallDist(): Path? {
         val alt = root.resolve("apps/syncd/build/install/syncd")
         if (AppInstallLayout.isSyncdDist(alt)) return alt
     }
-    if (AppInstallLayout.isSyncdDist(existing)) return existing
+    // Never treat the live install dir as the *source* — copyTree would delete it mid-copy
+    // and leave a broken tree (e.g. empty syncd/runtime with no bin/).
     return null
 }
 
@@ -226,22 +254,60 @@ private fun buildInstallDist(root: Path): ServiceCommandResult {
 
 private fun maybeBundleRuntime(syncdDest: Path) {
     val existing = syncdDest.resolve("runtime")
-    if (Files.isRegularFile(existing.resolve("bin").resolve(if (currentOs() == DesktopOs.WINDOWS) "java.exe" else "java"))) {
-        return
+    if (hasJavaRuntime(existing)) return
+    // Incomplete leftover (e.g. empty runtime/ after a failed self-copy).
+    if (Files.exists(existing)) {
+        log.warn("daemon", "removing incomplete syncd JRE", mapOf("path" to existing.toString()))
+        existing.toFile().deleteRecursively()
     }
-    val fromApp = AppInstallLayout.appRoot()?.resolve("lib")?.resolve("runtime")
-    if (fromApp != null && Files.isDirectory(fromApp)) {
-        log.info("daemon", "bundling JRE for syncd", mapOf("from" to fromApp.toString()))
-        copyTree(fromApp, existing)
-        return
+
+    val sources = buildList {
+        AppInstallLayout.appRoot()?.resolve("lib")?.resolve("runtime")?.let { add(it) }
+        val javaHome = Path.of(System.getProperty("java.home")).toAbsolutePath().normalize()
+        add(javaHome)
+    }.distinctBy { it.toAbsolutePath().normalize() }
+
+    for (source in sources) {
+        if (!hasJavaRuntime(source)) continue
+        // Refuse to copy from inside the destination tree.
+        if (source.startsWith(syncdDest)) continue
+        log.info("daemon", "bundling JRE for syncd", mapOf("from" to source.toString()))
+        copyTree(source, existing)
+        if (hasJavaRuntime(existing)) return
     }
 }
 
+private fun hasJavaRuntime(runtimeDir: Path): Boolean {
+    val javaName = if (currentOs() == DesktopOs.WINDOWS) "java.exe" else "java"
+    return Files.isRegularFile(runtimeDir.resolve("bin").resolve(javaName))
+}
+
+/**
+ * System JDK home suitable for a systemd user unit. Skips ephemeral AppImage/jpackage mounts
+ * (those must be copied into syncd/runtime instead).
+ */
+private fun systemJavaHomeForService(): String? {
+    val home = Path.of(System.getProperty("java.home")).toAbsolutePath().normalize()
+    if (home.fileName.toString() == "runtime") return null
+    val path = home.toString()
+    if (path.contains("/tmp/.mount_") || path.contains(".AppImage") || path.contains("/AppDir/")) {
+        return null
+    }
+    val java = home.resolve("bin").resolve(if (currentOs() == DesktopOs.WINDOWS) "java.exe" else "java")
+    if (!Files.isRegularFile(java)) return null
+    return home.toString()
+}
+
 private fun copyTree(from: Path, to: Path) {
-    if (Files.exists(to)) to.toFile().deleteRecursively()
-    Files.walk(from).use { stream ->
+    val fromNorm = from.toAbsolutePath().normalize()
+    val toNorm = to.toAbsolutePath().normalize()
+    check(fromNorm != toNorm) { "copyTree source and destination are the same: $fromNorm" }
+    check(!toNorm.startsWith(fromNorm)) { "copyTree refuses nested destination under source: $fromNorm -> $toNorm" }
+    check(!fromNorm.startsWith(toNorm)) { "copyTree refuses source under destination: $fromNorm -> $toNorm" }
+    if (Files.exists(toNorm)) toNorm.toFile().deleteRecursively()
+    Files.walk(fromNorm).use { stream ->
         stream.forEach { src ->
-            val dest = to.resolve(from.relativize(src).toString())
+            val dest = toNorm.resolve(fromNorm.relativize(src).toString())
             if (Files.isDirectory(src)) {
                 Files.createDirectories(dest)
             } else {

@@ -50,6 +50,7 @@ import dev.rommdeck.shared.sync.DaemonStatus
 import dev.rommdeck.shared.sync.controlAutoSyncService
 import dev.rommdeck.shared.sync.installAutoSyncService
 import dev.rommdeck.shared.sync.isAutoSyncServiceInstalled
+import dev.rommdeck.shared.sync.isSyncdJavaRuntimeReady
 import dev.rommdeck.shared.sync.readDaemonStatus
 import dev.rommdeck.shared.sync.readInstalledSyncdVersion
 import kotlinx.coroutines.Dispatchers
@@ -128,7 +129,7 @@ fun AutoSyncSettings(
                             scope.launch {
                                 try {
                                     withContext(Dispatchers.IO) {
-                                        if (enabled && unitInstalled != true) {
+                                        if (enabled && (unitInstalled != true || !isSyncdJavaRuntimeReady())) {
                                             val installed = installAutoSyncService()
                                             if (!installed.ok) {
                                                 onNotice(

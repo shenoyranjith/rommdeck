@@ -14,24 +14,35 @@ enum class AutoSyncAction {
     RESTART,
 }
 
-fun systemdUnitText(execStart: String): String = """
-    |[Unit]
-    |Description=RommDeck save/state sync daemon
-    |After=network-online.target
-    |Wants=network-online.target
-    |
-    |[Service]
-    |Type=simple
-    |ExecStart=$execStart
-    |Restart=on-failure
-    |RestartSec=10
-    |StandardOutput=journal
-    |StandardError=journal
-    |
-    |[Install]
-    |WantedBy=default.target
-    |
-""".trimMargin()
+fun systemdUnitText(execStart: String, javaHome: String? = null): String {
+    val environment = if (javaHome.isNullOrBlank()) {
+        ""
+    } else {
+        """
+        |Environment=JAVA_HOME=$javaHome
+        |Environment=PATH=$javaHome/bin:/usr/bin:/bin
+        |
+        """.trimMargin()
+    }
+    return """
+        |[Unit]
+        |Description=RommDeck save/state sync daemon
+        |After=network-online.target
+        |Wants=network-online.target
+        |
+        |[Service]
+        |Type=simple
+        |ExecStart=$execStart
+        |${environment}Restart=on-failure
+        |RestartSec=10
+        |StandardOutput=journal
+        |StandardError=journal
+        |
+        |[Install]
+        |WantedBy=default.target
+        |
+    """.trimMargin()
+}
 
 fun launchAgentPlist(execStart: String): String = """
     |<?xml version="1.0" encoding="UTF-8"?>
@@ -65,3 +76,6 @@ expect fun isAutoSyncServiceInstalled(): Boolean
 expect fun installAutoSyncService(): ServiceCommandResult
 
 expect fun controlAutoSyncService(action: AutoSyncAction): ServiceCommandResult
+
+/** True when installed syncd has a usable JRE (bundled or system JAVA_HOME for the unit). */
+expect fun isSyncdJavaRuntimeReady(): Boolean

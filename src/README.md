@@ -2,7 +2,7 @@
 
 Cross-platform **RomM ↔ RetroDECK** app (ES-DE frontend): desktop client, background sync daemon, and shared Kotlin Multiplatform library.
 
-**v0.1.1** ships the **Linux** app. **RetroDECK** is the supported platform (auto-detect). Other library trees (EmuDeck, plain ES-DE, custom) use manual Target paths. **Android is out of scope** — use [Argosy](https://github.com/rommapp/argosy-launcher).
+**v0.1.3** ships the **Linux** app. **RetroDECK** is the supported platform (auto-detect). Other library trees (EmuDeck, plain ES-DE, custom) use manual Target paths. **Android is out of scope** — use [Argosy](https://github.com/rommapp/argosy-launcher).
 
 User-facing overview: [`../README.md`](../README.md).
 
